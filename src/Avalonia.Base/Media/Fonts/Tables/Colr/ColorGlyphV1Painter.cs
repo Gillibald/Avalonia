@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Platform;
+using Avalonia.Utilities;
 
 namespace Avalonia.Media.Fonts.Tables.Colr
 {
@@ -10,11 +11,20 @@ namespace Avalonia.Media.Fonts.Tables.Colr
     /// Implements painting for COLR v1 glyphs using Avalonia's DrawingContext.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Paint-graph transforms are pushed onto the drawing context rather than baked into the
     /// geometry: each cached design-space outline is drawn as-is (no per-draw transformed clone),
-    /// the context maps gradient coordinates — which COLR defines in the same glyph space — without
+    /// the context maps gradient coordinates, which COLR defines in the same glyph space, without
     /// a manual brush transform, and a pushed clip box clips exactly under rotation / skew instead
     /// of as an axis-aligned approximation.
+    /// </para>
+    /// <para>
+    /// A glyph clip (PaintGlyph) is pushed lazily. While nothing but fills follows it, each fill
+    /// draws the outline geometry with its brush, which is the clip filled and avoids a geometry
+    /// clip for the common PaintGlyph-over-fill graph. Any other operation (a transform, a clip, a
+    /// layer) first pushes the outline as a geometry clip in the transform it was declared in;
+    /// fills under it then fill a rectangle covering the clip region.
+    /// </para>
     /// </remarks>
     internal sealed class ColorGlyphV1Painter : IColorPainter, IDisposable
     {
@@ -24,24 +34,15 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         // Every push (transform / clip / layer) onto the caller's DrawingContext lands on this one
         // LIFO stack. The traverser pairs each push with a pop in correct nesting order, so the top
         // is always the matching state; on a mid-paint throw the traverser's pop is skipped, so
-        // Dispose unwinds whatever remains — otherwise the pushed states would leak into the
+        // Dispose unwinds whatever remains, otherwise the pushed states would leak into the
         // caller's context and corrupt all subsequent drawing.
         private readonly Stack<IDisposable> _pushedStates = new Stack<IDisposable>();
 
-        // Track the pending glyph that needs to be painted with the next fill
-        // In COLR v1, there's a 1:1 mapping between glyph and fill operations
-        private IGeometryImpl? _pendingGlyph;
+        private readonly Stack<Matrix> _transformStack = new Stack<Matrix>();
+        private readonly Stack<ClipEntry> _clips = new Stack<ClipEntry>();
 
-        // Transforms encountered BETWEEN a PaintGlyph and its fill re-map the fill's
-        // coordinate space only — PaintGlyph clips to its outline first, then renders the
-        // sub-paint inside it. Those must not touch the drawing context (that would move the
-        // outline copy itself — every layer of a real emoji would scatter); they accumulate
-        // here and ride the fill brush's Transform about the absolute design origin instead.
-        private readonly Stack<bool> _transformKinds = new();
-        private readonly Stack<Matrix> _brushTransformStack = new();
-        private Matrix _brushTransform = Matrix.Identity;
-
-        private static readonly RelativePoint s_designOrigin = new(0, 0, RelativeUnit.Absolute);
+        // The paint-graph transform relative to the painter's root space (font units, Y-up).
+        private Matrix _transform = Matrix.Identity;
 
         public ColorGlyphV1Painter(DrawingContext drawingContext, ColrContext context)
         {
@@ -51,43 +52,27 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
         public void PushTransform(Matrix transform)
         {
-            if (_pendingGlyph is not null)
-            {
-                _transformKinds.Push(false);
-                _brushTransformStack.Push(_brushTransform);
+            MaterializePendingClip();
 
-                // Deeper transforms apply to the gradient's coordinates first, so the later
-                // push multiplies on the left in row-vector convention.
-                _brushTransform = transform * _brushTransform;
-                return;
-            }
-
-            _transformKinds.Push(true);
             _pushedStates.Push(_drawingContext.PushTransform(transform));
+            _transformStack.Push(_transform);
+            _transform = transform * _transform;
         }
 
         public void PopTransform()
         {
-            if (_transformKinds.Count == 0)
-            {
-                return;
-            }
+            PopState();
 
-            if (_transformKinds.Pop())
+            if (_transformStack.Count > 0)
             {
-                PopState();
-            }
-            else
-            {
-                _brushTransform = _brushTransformStack.Pop();
+                _transform = _transformStack.Pop();
             }
         }
 
-        private ImmutableTransform? CurrentBrushTransform
-            => _brushTransform.IsIdentity ? null : new ImmutableTransform(_brushTransform);
-
         public void PushLayer(CompositeMode mode)
         {
+            MaterializePendingClip();
+
             // Composite groups are isolated per the COLR spec: the group's content blends within
             // itself and the finished group composites onto the destination as a unit, so every
             // layer is pushed isolated with its blend mode.
@@ -137,11 +122,40 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
         public void PushClip(Rect clipBox)
         {
-            // The context transform applies to the clip, so the box clips exactly — even rotated.
-            _pushedStates.Push(_drawingContext.PushClip(clipBox));
+            MaterializePendingClip();
+
+            // The context transform applies to the clip, so the box clips exactly, even rotated. It
+            // is pushed as a rounded-rect clip because render data records every clip that way, so
+            // a recorded colour glyph replays the same antialiased clip edge a live draw produces.
+            _pushedStates.Push(_drawingContext.PushClip(new RoundedRect(clipBox)));
+            _clips.Push(new ClipEntry(null, Intersect(clipBox.TransformToAABB(_transform)), isPushed: true));
         }
 
-        public void PopClip() => PopState();
+        public void PushGlyphClip(ushort glyphIndex)
+        {
+            MaterializePendingClip();
+
+            // The cached design-space outline, used under the context transform with no per-draw
+            // clone. A glyph without an outline clips everything away.
+            var geometry = _context.GlyphTypeface.GetGlyphOutline(glyphIndex);
+
+            var region = geometry is null ? (Rect?)null : Intersect(geometry.Bounds.TransformToAABB(_transform));
+
+            _clips.Push(new ClipEntry(geometry, region, isPushed: false));
+        }
+
+        public void PopClip()
+        {
+            if (_clips.Count == 0)
+            {
+                return;
+            }
+
+            if (_clips.Pop().IsPushed)
+            {
+                PopState();
+            }
+        }
 
         private void PopState()
         {
@@ -152,7 +166,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         }
 
         /// <summary>
-        /// Unwinds any states still pushed onto the caller's <see cref="DrawingContext"/> — the
+        /// Unwinds any states still pushed onto the caller's <see cref="DrawingContext"/>, the
         /// normal case leaves none (every push was popped during traversal), but a throw mid-paint
         /// leaves the in-flight states here, and disposing in reverse-push (LIFO) order restores
         /// the context exactly.
@@ -165,173 +179,258 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             }
         }
 
-        public void FillSolid(Color color)
-        {
-            // Render the pending glyph with this solid color
-            if (_pendingGlyph != null)
-            {
-                var brush = new ImmutableSolidColorBrush(color);
-
-                _drawingContext.DrawGeometry(brush, null, _pendingGlyph);
-
-                _pendingGlyph = null;
-            }
-        }
+        public void FillSolid(Color color) => Fill(new ImmutableSolidColorBrush(color));
 
         public void FillLinearGradient(Point p0, Point p1, GradientStop[] stops, GradientSpreadMethod extend)
         {
-            if (_pendingGlyph != null)
+            Fill(new ImmutableLinearGradientBrush(
+                gradientStops: ToImmutableStops(stops),
+                opacity: 1.0,
+                spreadMethod: extend,
+                startPoint: new RelativePoint(p0, RelativeUnit.Absolute),
+                endPoint: new RelativePoint(p1, RelativeUnit.Absolute)));
+        }
+
+        public void FillRadialGradient(Point c0, double r0, Point c1, double r1, GradientStop[] stops, GradientSpreadMethod extend)
+        {
+            // A COLR PaintRadialGradient interpolates between circle 0 (c0, r0) at color-line
+            // position 0 and circle 1 (c1, r1) at position 1. Avalonia's RadialGradientBrush is a
+            // single circle (Center + radius) at stop offset 1 with a focal point (GradientOrigin)
+            // at offset 0.
+            if (MathUtilities.AreClose(c0.X, c1.X) && MathUtilities.AreClose(c0.Y, c1.Y))
             {
-                var gradientStops = new ImmutableGradientStop[stops.Length];
+                FillConcentricRadialGradient(c1, r0, r1, stops, extend);
+                return;
+            }
+
+            // Two distinct circles map circle 1 to Center + radius and circle 0's centre to the focal
+            // point; circle 0's radius is dropped. That is exact only when r0 is 0. A general
+            // two-circle gradient with r0 > 0 needs a two-point conical brush, which the drawing
+            // backends do not expose.
+            Fill(new ImmutableRadialGradientBrush(
+                gradientStops: ToImmutableStops(stops),
+                opacity: 1.0,
+                spreadMethod: extend,
+                center: new RelativePoint(c1, RelativeUnit.Absolute),
+                gradientOrigin: new RelativePoint(c0, RelativeUnit.Absolute),
+                radiusX: new RelativeScalar(r1, RelativeUnit.Absolute),
+                radiusY: new RelativeScalar(r1, RelativeUnit.Absolute)));
+        }
+
+        /// <summary>
+        /// Fills a radial gradient whose two circles share a centre. Color-line position t lies at
+        /// radius r0 + t (r1 - r0); the brush spans the larger radius R, so each stop moves to brush
+        /// offset (r0 + t (r1 - r0)) / R, in reverse order when r0 &gt; r1. Exact for the Pad extend;
+        /// Repeat and Reflect repeat over [0, R] rather than over the [r0, r1] band, so they are exact
+        /// only when the smaller radius is 0.
+        /// </summary>
+        private void FillConcentricRadialGradient(Point center, double r0, double r1, GradientStop[] stops,
+            GradientSpreadMethod extend)
+        {
+            var radius = Math.Max(r0, r1);
+
+            if (radius <= 0)
+            {
+                return;
+            }
+
+            var gradientStops = new ImmutableGradientStop[stops.Length];
+
+            for (var i = 0; i < stops.Length; i++)
+            {
+                var stop = r0 > r1 ? stops[stops.Length - 1 - i] : stops[i];
+                var offset = (r0 + stop.Offset * (r1 - r0)) / radius;
+                gradientStops[i] = new ImmutableGradientStop(offset, stop.Color);
+            }
+
+            Fill(new ImmutableRadialGradientBrush(
+                gradientStops: gradientStops,
+                opacity: 1.0,
+                spreadMethod: extend,
+                center: new RelativePoint(center, RelativeUnit.Absolute),
+                gradientOrigin: new RelativePoint(center, RelativeUnit.Absolute),
+                radiusX: new RelativeScalar(radius, RelativeUnit.Absolute),
+                radiusY: new RelativeScalar(radius, RelativeUnit.Absolute)));
+        }
+
+        public void FillConicGradient(Point center, double startAngle, double endAngle, GradientStop[] stops, GradientSpreadMethod extend)
+        {
+            if (stops.Length == 0)
+            {
+                return;
+            }
+
+            // A negative sweep runs the color line the other way around; normalize to a
+            // positive arc with the line reversed so one mapping below covers both.
+            var sweep = endAngle - startAngle;
+
+            if (sweep < 0)
+            {
+                startAngle = endAngle;
+                sweep = -sweep;
+
+                var reversed = new GradientStop[stops.Length];
+
+                for (var i = 0; i < stops.Length; i++)
+                {
+                    var source = stops[stops.Length - 1 - i];
+                    reversed[i] = new GradientStop(1.0 - source.Offset, source.Color);
+                }
+
+                stops = reversed;
+            }
+
+            ImmutableGradientStop[] gradientStops;
+
+            if (sweep >= 359.99)
+            {
+                // Full turn: the color line spans the whole circle, direct mapping.
+                gradientStops = new ImmutableGradientStop[stops.Length];
 
                 for (var i = 0; i < stops.Length; i++)
                 {
                     gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
                 }
-
-                var brush = new ImmutableLinearGradientBrush(
-                    gradientStops: gradientStops,
-                    opacity: 1.0,
-                    transform: CurrentBrushTransform,
-                    transformOrigin: s_designOrigin,
-                    spreadMethod: extend,
-                    startPoint: new RelativePoint(p0, RelativeUnit.Absolute),
-                    endPoint: new RelativePoint(p1, RelativeUnit.Absolute));
-
-                _drawingContext.DrawGeometry(brush, null, _pendingGlyph);
-                _pendingGlyph = null;
             }
-        }
-
-        public void FillRadialGradient(Point c0, double r0, Point c1, double r1, GradientStop[] stops, GradientSpreadMethod extend)
-        {
-            if (_pendingGlyph != null)
+            else
             {
-                // A COLR PaintRadialGradient interpolates between circle 0 (c0, r0) at color-line
-                // position 0 and circle 1 (c1, r1) at position 1. Avalonia's RadialGradientBrush models
-                // the position-1 circle as Center + radius and position 0 as a focal *point*
-                // (GradientOrigin), so map circle 1 → Center/radius and circle 0's centre → the focal
-                // point. A non-zero focal radius has no direct equivalent; for the common concentric
-                // annulus (c0 == c1, the shape emoji shading layers use) the color line is remapped
-                // exactly — position 0 lands at radius r0 — and only the eccentric r0 > 0 case stays
-                // an approximation.
-                var innerFraction = 0.0;
+                // Avalonia's conic brush always sweeps a full turn from its Angle, so the
+                // color line is rescaled into the arc's fraction of the circle and the
+                // remainder is padded with the nearest boundary color (last color after the
+                // arc, first color before it, hard seam midway between end and start+360);
+                // the pad extend of the sweep spec. The brush itself pads before the first
+                // and after the last stop, which keeps the two constant regions flat.
+                var arc = Math.Clamp(sweep / 360.0, 0.0, 1.0);
+                var seam = (arc + 1.0) / 2.0;
+                var last = stops[stops.Length - 1].Color;
+                var first = stops[0].Color;
 
-                if (r0 > 0 && r1 > r0 &&
-                    Math.Abs(c0.X - c1.X) < 0.5 && Math.Abs(c0.Y - c1.Y) < 0.5)
-                {
-                    innerFraction = r0 / r1;
-                }
-
-                var gradientStops = new ImmutableGradientStop[stops.Length];
+                gradientStops = new ImmutableGradientStop[stops.Length + 3];
 
                 for (var i = 0; i < stops.Length; i++)
                 {
-                    gradientStops[i] = new ImmutableGradientStop(
-                        innerFraction + stops[i].Offset * (1 - innerFraction), stops[i].Color);
+                    gradientStops[i] = new ImmutableGradientStop(stops[i].Offset * arc, stops[i].Color);
                 }
 
-                var brush = new ImmutableRadialGradientBrush(
-                    gradientStops: gradientStops,
-                    opacity: 1.0,
-                    transform: CurrentBrushTransform,
-                    transformOrigin: s_designOrigin,
-                    spreadMethod: extend,
-                    center: new RelativePoint(c1, RelativeUnit.Absolute),
-                    gradientOrigin: new RelativePoint(c0, RelativeUnit.Absolute),
-                    radiusX: new RelativeScalar(r1, RelativeUnit.Absolute),
-                    radiusY: new RelativeScalar(r1, RelativeUnit.Absolute));
-
-                _drawingContext.DrawGeometry(brush, null, _pendingGlyph);
-                _pendingGlyph = null;
+                gradientStops[stops.Length] = new ImmutableGradientStop(seam, last);
+                gradientStops[stops.Length + 1] = new ImmutableGradientStop(seam, first);
+                gradientStops[stops.Length + 2] = new ImmutableGradientStop(1.0, first);
             }
+
+            Fill(new ImmutableConicGradientBrush(
+                gradientStops: gradientStops,
+                opacity: 1.0,
+                spreadMethod: extend,
+                center: new RelativePoint(center, RelativeUnit.Absolute),
+                angle: startAngle));
         }
 
-        public void FillConicGradient(Point center, double startAngle, double endAngle, GradientStop[] stops, GradientSpreadMethod extend)
+        private static ImmutableGradientStop[] ToImmutableStops(GradientStop[] stops)
         {
-            if (_pendingGlyph != null && stops.Length > 0)
+            var gradientStops = new ImmutableGradientStop[stops.Length];
+
+            for (var i = 0; i < stops.Length; i++)
             {
-                // A negative sweep runs the color line the other way around; normalize to a
-                // positive arc with the line reversed so one mapping below covers both.
-                var sweep = endAngle - startAngle;
-
-                if (sweep < 0)
-                {
-                    startAngle = endAngle;
-                    sweep = -sweep;
-
-                    var reversed = new GradientStop[stops.Length];
-
-                    for (var i = 0; i < stops.Length; i++)
-                    {
-                        var source = stops[stops.Length - 1 - i];
-                        reversed[i] = new GradientStop(1.0 - source.Offset, source.Color);
-                    }
-
-                    stops = reversed;
-                }
-
-                ImmutableGradientStop[] gradientStops;
-
-                if (sweep >= 359.99)
-                {
-                    // Full turn: the color line spans the whole circle, direct mapping.
-                    gradientStops = new ImmutableGradientStop[stops.Length];
-
-                    for (var i = 0; i < stops.Length; i++)
-                    {
-                        gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
-                    }
-                }
-                else
-                {
-                    // Avalonia's conic brush always sweeps a full turn from its Angle, so the
-                    // color line is rescaled into the arc's fraction of the circle and the
-                    // remainder is padded with the nearest boundary color (last color after the
-                    // arc, first color before it, hard seam midway between end and start+360) —
-                    // the pad extend of the sweep spec. The brush itself pads before the first
-                    // and after the last stop, which keeps the two constant regions flat.
-                    var arc = Math.Clamp(sweep / 360.0, 0.0, 1.0);
-                    var seam = (arc + 1.0) / 2.0;
-                    var last = stops[stops.Length - 1].Color;
-                    var first = stops[0].Color;
-
-                    gradientStops = new ImmutableGradientStop[stops.Length + 3];
-
-                    for (var i = 0; i < stops.Length; i++)
-                    {
-                        gradientStops[i] = new ImmutableGradientStop(stops[i].Offset * arc, stops[i].Color);
-                    }
-
-                    gradientStops[stops.Length] = new ImmutableGradientStop(seam, last);
-                    gradientStops[stops.Length + 1] = new ImmutableGradientStop(seam, first);
-                    gradientStops[stops.Length + 2] = new ImmutableGradientStop(1.0, first);
-                }
-
-                var brush = new ImmutableConicGradientBrush(
-                    gradientStops: gradientStops,
-                    opacity: 1.0,
-                    transform: CurrentBrushTransform,
-                    transformOrigin: s_designOrigin,
-                    spreadMethod: extend,
-                    center: new RelativePoint(center, RelativeUnit.Absolute),
-                    angle: startAngle);
-
-                _drawingContext.DrawGeometry(brush, null, _pendingGlyph);
-
-                _pendingGlyph = null;
+                gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
             }
+
+            return gradientStops;
         }
 
-        public void Glyph(ushort glyphIndex)
+        /// <summary>
+        /// Fills the current clip region with <paramref name="brush"/>. Without any clip the region
+        /// is unbounded, and nothing is drawn.
+        /// </summary>
+        private void Fill(IBrush brush)
         {
-            // The cached design-space outline, drawn under the context transform — no per-draw clone.
-            var geometry = _context.GlyphTypeface.GetGlyphOutline(glyphIndex);
-
-            if (geometry != null)
+            if (_clips.Count == 0)
             {
-                _pendingGlyph = geometry;
+                return;
             }
+
+            var top = _clips.Peek();
+
+            if (top.Region is not { } region)
+            {
+                return;
+            }
+
+            // A glyph clip not yet pushed was declared in the current transform (any push since
+            // would have pushed it), so filling it is drawing the outline.
+            if (!top.IsPushed && top.Geometry is not null)
+            {
+                _drawingContext.DrawGeometry(brush, null, top.Geometry);
+                return;
+            }
+
+            // Otherwise cover the clip region, mapped from root space into the current space; the
+            // pushed clips trim the rectangle to the exact region. A singular transform paints nothing.
+            if (!_transform.TryInvert(out var inverse))
+            {
+                return;
+            }
+
+            _drawingContext.DrawRectangle(brush, null, region.TransformToAABB(inverse));
+        }
+
+        /// <summary>
+        /// Pushes the innermost glyph clip as a geometry clip if it has not been pushed yet, before
+        /// an operation that changes the transform, clip or layer it would otherwise be drawn under.
+        /// </summary>
+        private void MaterializePendingClip()
+        {
+            if (_clips.Count == 0)
+            {
+                return;
+            }
+
+            var top = _clips.Peek();
+
+            if (top.IsPushed || top.Geometry is null)
+            {
+                return;
+            }
+
+            _pushedStates.Push(_drawingContext.PushGeometryClip(new PlatformGeometry(top.Geometry)));
+            top.IsPushed = true;
+        }
+
+        /// <summary>
+        /// Intersects a root-space rectangle with the current clip region; null when the result is
+        /// empty, so everything under it is clipped away.
+        /// </summary>
+        private Rect? Intersect(Rect rect)
+        {
+            if (_clips.Count > 0)
+            {
+                if (_clips.Peek().Region is not { } outer)
+                {
+                    return null;
+                }
+
+                rect = outer.Intersect(rect);
+            }
+
+            return rect.Width > 0 && rect.Height > 0 ? rect : null;
+        }
+
+        private sealed class ClipEntry
+        {
+            public ClipEntry(IGeometryImpl? geometry, Rect? region, bool isPushed)
+            {
+                Geometry = geometry;
+                Region = region;
+                IsPushed = isPushed;
+            }
+
+            /// <summary>The glyph outline of a PaintGlyph clip; null for a clip box.</summary>
+            public IGeometryImpl? Geometry { get; }
+
+            /// <summary>The axis-aligned extent of the clip region in root space; null when empty.</summary>
+            public Rect? Region { get; }
+
+            /// <summary>Whether the clip has been pushed onto the drawing context.</summary>
+            public bool IsPushed { get; set; }
         }
     }
 }

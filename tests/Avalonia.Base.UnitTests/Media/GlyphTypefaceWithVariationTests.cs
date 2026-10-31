@@ -1,5 +1,8 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
@@ -30,6 +33,15 @@ namespace Avalonia.Base.UnitTests.Media
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(assetUri));
             return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
+        }
+
+        // Synthetic font memory keeps its tables readable after Dispose, so a disposed
+        // GlyphTypeface can only fail through its own disposed-state check.
+        private static GlyphTypeface LoadTypefaceWithRetainedFontData(string assetUri)
+        {
+            var assetLoader = new StandardAssetLoader();
+            using var stream = assetLoader.Open(new Uri(assetUri));
+            return SyntheticFont.FromStream(stream).CreateGlyphTypeface();
         }
 
         private static NormalizedVariationPosition WghtPosition(GlyphTypeface gt, double weight)
@@ -349,7 +361,27 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void Disposing_A_Variation_Clone_Should_Dispose_Its_Own_Shaper_Typeface()
+        public void Disposing_A_Variation_Clone_Should_Keep_It_Usable_From_The_Source_Cache()
+        {
+            var shaper = new TrackingTextShaperImpl(varies: true);
+
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(textShaperImpl: shaper)))
+            {
+                var gt = LoadTypeface(InterVariableAsset);
+                var position = WghtPosition(gt, 700);
+
+                var varied = gt.WithVariation(position);
+                var variedShaper = (TrackingShaperTypeface)varied.TextShaperTypeface;
+
+                varied.Dispose();
+
+                Assert.Same(varied, gt.WithVariation(position));
+                Assert.False(variedShaper.IsDisposed);
+            }
+        }
+
+        [Fact]
+        public void Disposing_The_Source_Should_Dispose_Its_Variation_Clones()
         {
             var shaper = new TrackingTextShaperImpl(varies: true);
 
@@ -360,13 +392,35 @@ namespace Avalonia.Base.UnitTests.Media
 
                 var varied = gt.WithVariation(WghtPosition(gt, 700));
                 var variedShaper = (TrackingShaperTypeface)varied.TextShaperTypeface;
-                Assert.NotSame(sourceShaper, variedShaper);
 
-                varied.Dispose();
+                gt.Dispose();
 
                 Assert.True(variedShaper.IsDisposed);
-                Assert.False(sourceShaper.IsDisposed);
+                Assert.True(sourceShaper.IsDisposed);
             }
+        }
+
+        [Fact]
+        public void WithVariations_On_A_Disposed_Source_Should_Throw()
+        {
+            var gt = LoadTypefaceWithRetainedFontData(InterVariableAsset);
+            var settings = new FontVariationSettings(new[] { new FontVariation(s_wghtTag, 700) });
+
+            gt.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => gt.WithVariations(settings));
+        }
+
+        [Fact]
+        public void WithVariations_On_A_Clone_Of_A_Disposed_Source_Should_Throw()
+        {
+            var gt = LoadTypefaceWithRetainedFontData(InterVariableAsset);
+            var varied = gt.WithVariations(new FontVariationSettings(new[] { new FontVariation(s_wghtTag, 700) }));
+            var settings = new FontVariationSettings(new[] { new FontVariation(s_wghtTag, 300) });
+
+            gt.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => varied.WithVariations(settings));
         }
 
         private sealed class TrackingTextShaperImpl : ITextShaperImpl
@@ -485,9 +539,8 @@ namespace Avalonia.Base.UnitTests.Media
             var black = def.WithVariation(WghtPosition(def, 900));
             Assert.NotSame(def, black);
 
-            // Before the fix the varied instance returned the static (default-instance) glyf header
-            // box, so every glyph's ink bounds matched the default. With gvar applied at the heavier
-            // weight the outlines deform, so at least one glyph's control-point box must now differ.
+            // The glyf header box describes the default instance only. gvar deforms the outlines at
+            // the heavier weight, so at least one glyph's control-point box differs from the default.
             var anyDifferent = false;
             var max = Math.Min(def.GlyphCount, 300);
 
@@ -523,11 +576,8 @@ namespace Avalonia.Base.UnitTests.Media
         [Fact]
         public void Variable_Glyf_Ink_Bounds_Contract_Matches_The_Default_Instance()
         {
-            // R30: at a varied instance, TryGetGlyphInkBounds must keep the same true/false contract
-            // as the default instance — false for an out-of-range glyph, and true + zero box for a
-            // valid empty glyph (whitespace). The varied path caches the deformed box, and a naive
-            // failure-to-build would otherwise either return true + zero for an out-of-range glyph
-            // or flip an empty glyph to false.
+            // A varied instance keeps the default instance's contract: false for an out-of-range
+            // glyph, true with the zero box for a valid empty glyph such as whitespace.
             var def = LoadTypeface(InterVariableAsset);
             var black = def.WithVariation(WghtPosition(def, 900));
 
@@ -544,6 +594,72 @@ namespace Avalonia.Base.UnitTests.Media
 
             Assert.Equal(defHasBounds, blackHasBounds);
             Assert.Equal(defBox, blackBox);
+        }
+
+        [Fact]
+        public void Variable_Glyf_Ink_Bounds_Are_Unavailable_For_A_Truncated_Glyph_At_A_Non_Default_Instance()
+        {
+            var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable);
+            var glyph = font.CreateGlyphTypeface().CharacterToGlyphMap['H'];
+
+            var def = WithTruncatedGlyphBody(font, glyph).CreateGlyphTypeface();
+            var black = def.WithVariation(WghtPosition(def, 900));
+
+            // The header box survives, so the default instance still reads it; the varied instance
+            // has to build the outline, which the truncated body cannot provide.
+            Assert.True(def.TryGetGlyphInkBounds(glyph, out var defBox));
+            Assert.NotEqual(default, defBox);
+
+            Assert.False(black.TryGetGlyphInkBounds(glyph, out var blackBox));
+            Assert.Equal(default, blackBox);
+
+            // A failed read is not memoised as an empty box.
+            Assert.False(black.TryGetGlyphInkBounds(glyph, out _));
+        }
+
+        [Fact]
+        public void Single_And_Batch_Metrics_Agree_For_A_Truncated_Glyph_At_A_Non_Default_Instance()
+        {
+            var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable);
+            var glyph = font.CreateGlyphTypeface().CharacterToGlyphMap['H'];
+
+            var def = WithTruncatedGlyphBody(font, glyph).CreateGlyphTypeface();
+            var black = def.WithVariation(WghtPosition(def, 900));
+
+            // Without ink bounds the bearings fall back to the side bearings, which for 'H' are not zero.
+            Assert.True(black.TryGetGlyphMetrics(glyph, out var single));
+            Assert.NotEqual(0, single.XBearing);
+
+            var batch = new GlyphMetrics[1];
+            Assert.True(black.TryGetGlyphMetrics(new[] { glyph }, batch));
+
+            Assert.Equal(single.XBearing, batch[0].XBearing);
+            Assert.Equal(single.YBearing, batch[0].YBearing);
+            Assert.Equal(single.Width, batch[0].Width);
+            Assert.Equal(single.Height, batch[0].Height);
+            Assert.Equal(single.AdvanceWidth, batch[0].AdvanceWidth);
+            Assert.Equal(single.AdvanceHeight, batch[0].AdvanceHeight);
+        }
+
+        /// <summary>
+        /// Raises a simple glyph's numberOfContours to the int16 maximum while keeping its header box,
+        /// so the endPtsOfContours array, flags and coordinates it declares run past the glyph's loca
+        /// extent. The header stays readable; the outline cannot be built.
+        /// </summary>
+        private static SyntheticFont WithTruncatedGlyphBody(SyntheticFont font, ushort glyph)
+        {
+            var head = font.GetTable("head");
+            var loca = font.GetTable("loca");
+
+            var start = BinaryPrimitives.ReadInt16BigEndian(head.AsSpan(50)) == 0
+                ? BinaryPrimitives.ReadUInt16BigEndian(loca.AsSpan(glyph * 2)) * 2
+                : (int)BinaryPrimitives.ReadUInt32BigEndian(loca.AsSpan(glyph * 4));
+
+            return font.Mutate("glyf", glyf =>
+            {
+                Assert.True(BinaryPrimitives.ReadInt16BigEndian(glyf.AsSpan(start)) > 0);
+                BinaryPrimitives.WriteInt16BigEndian(glyf.AsSpan(start), short.MaxValue);
+            });
         }
 
         private static GlyphBounds InkBounds(GlyphTypeface typeface, ushort glyph)

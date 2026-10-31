@@ -9,7 +9,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
     /// COLR v1 glyph bounds, computed without a render backend. A ClipList yields bounds directly;
     /// the no-ClipList fallback unions the painted outlines' control-point extents, read via the
     /// outline tables' bounds path (the <c>glyf</c> header / a <c>BoundsGeometryContext</c> interpret
-    /// pass) rather than by building geometry — so neither path needs a geometry backend.
+    /// pass) rather than by building geometry, so neither path needs a geometry backend.
     /// </summary>
     public class ColrRenderingCharacterizationTests : IDisposable
     {
@@ -25,7 +25,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             Assert.NotNull(plain);
             var outlineGlyph = plain!.CharacterToGlyphMap['A'];
 
-            // base 3 → PaintGlyph(outline) → PaintSolid, with a ClipList.
+            // base 3 -> PaintGlyph(outline) -> PaintSolid, with a ClipList.
             var clipped = ColrTestFont
                 .Graft(InterRegular(), BuildColrV1GlyphSolid(baseGlyph: 3, outlineGlyph, clip: (0, 0, 1000, 1000)))
                 .TryCreateGlyphTypeface()!
@@ -33,7 +33,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
             Assert.NotNull(clipped);
 
-            // The clip box yields non-empty bounds without building any geometry — which also proves
+            // The clip box yields non-empty bounds without building any geometry, which also proves
             // the paint resolved (bounds are only computed when the paint parses).
             Assert.NotEqual(default, clipped!.Bounds);
         }
@@ -46,7 +46,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             var outlineGlyph = plain!.CharacterToGlyphMap['A'];
 
             // The referenced outline's control-point box (the glyf header for this static font),
-            // flipped from font space (Y-up) to drawing space (Y-down) — what the fallback derives,
+            // flipped from font space (Y-up) to drawing space (Y-down), what the fallback derives,
             // with no render backend.
             var header = new GlyphBounds[1];
             Assert.True(plain.TryGetGlyphBounds(new[] { outlineGlyph }, header));
@@ -54,7 +54,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             var expected = new Rect(box.XMin, box.YMin, box.Width, box.Height)
                 .TransformToAABB(Matrix.CreateScale(1, -1));
 
-            // The identical glyph WITHOUT a ClipList falls back to the painted outline's extent — read
+            // The identical glyph WITHOUT a ClipList falls back to the painted outline's extent, read
             // from the outline table's bounds path, no geometry built and no backend required.
             var clipless = ColrTestFont
                 .Graft(InterRegular(), BuildColrV1GlyphSolid(baseGlyph: 3, outlineGlyph, clip: null))
@@ -117,10 +117,91 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             Assert.Same(defaultPalette, undefined);
         }
 
+        [Fact]
+        public void V1_Glyph_Whose_Root_Paint_Does_Not_Parse_Has_No_Drawing()
+        {
+            // Format 99 is not a paint format, so the glyph's paint graph cannot be built. Callers
+            // must see null and fall back to GetGlyphOutline instead of drawing nothing.
+            var colr = new ColrV1Builder().BaseGlyph(3, ColrPaint.Raw(99, 0, 0, 0)).Build();
+
+            var typeface = ColrTestFont.Graft(InterRegular(), colr).TryCreateGlyphTypeface()!;
+
+            Assert.Null(typeface.GetGlyphDrawing(3));
+        }
+
+        [Fact]
+        public void Nested_PaintGlyph_Bounds_Are_The_Intersection_Of_Both_Outlines()
+        {
+            var plain = InterRegular().TryCreateGlyphTypeface()!;
+            var outlineGlyph = plain.CharacterToGlyphMap['A'];
+            var header = new GlyphBounds[1];
+            Assert.True(plain.TryGetGlyphBounds(new[] { outlineGlyph }, header));
+            var box = new Rect(header[0].XMin, header[0].YMin, header[0].Width, header[0].Height);
+
+            // PaintGlyph(A) -> PaintTranslate(dx) -> PaintGlyph(A) -> PaintSolid: the inner glyph clip
+            // intersects the outer one, so only the overlap of the two boxes can be painted.
+            const short dx = 200;
+            var colr = new ColrV1Builder()
+                .BaseGlyph(3, ColrPaint.Glyph(outlineGlyph,
+                    ColrPaint.Translate(dx, 0, ColrPaint.Glyph(outlineGlyph, ColrPaint.Solid(0)))))
+                .Build();
+
+            var drawing = ColrTestFont.Graft(InterRegular(), colr).TryCreateGlyphTypeface()!.GetGlyphDrawing(3);
+
+            var overlap = new Rect(box.X + dx, box.Y, box.Width - dx, box.Height);
+            Assert.NotNull(drawing);
+            Assert.Equal(overlap.TransformToAABB(Matrix.CreateScale(1, -1)), drawing!.Bounds);
+        }
+
+        [Fact]
+        public void Drawing_Type_Tells_A_Paint_Graph_Glyph_From_A_Layered_Glyph()
+        {
+            var outlineGlyph = InterRegular().TryCreateGlyphTypeface()!.CharacterToGlyphMap['A'];
+
+            var v1 = ColrTestFont
+                .Graft(InterRegular(), BuildColrV1GlyphSolid(baseGlyph: 3, outlineGlyph, clip: null))
+                .TryCreateGlyphTypeface()!
+                .GetGlyphDrawing(3);
+
+            var v0 = ColrTestFont
+                .Graft(InterRegular(), BuildColrV0SingleLayer(baseGlyph: 3, outlineGlyph))
+                .TryCreateGlyphTypeface()!
+                .GetGlyphDrawing(3);
+
+            Assert.NotNull(v1);
+            Assert.NotNull(v0);
+            Assert.Equal(GlyphDrawingType.ColorPaintGraph, v1!.Type);
+            Assert.Equal(GlyphDrawingType.ColorLayers, v0!.Type);
+        }
+
         private static SyntheticFont InterRegular() => SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular);
 
         /// <summary>
-        /// Builds a COLR v1 table: base glyph → PaintGlyph(outlineGlyph) → PaintSolid, with an
+        /// Builds a COLR v0 table with one base glyph drawn as a single layer of
+        /// <paramref name="outlineGlyph"/> in palette entry 0.
+        /// </summary>
+        private static byte[] BuildColrV0SingleLayer(ushort baseGlyph, ushort outlineGlyph)
+        {
+            var colr = new BigEndianBuffer();
+
+            colr.UInt16(0);   // version
+            colr.UInt16(1);   // numBaseGlyphRecords
+            colr.UInt32(14);  // baseGlyphRecordsOffset
+            colr.UInt32(20);  // layerRecordsOffset
+            colr.UInt16(1);   // numLayerRecords
+
+            colr.UInt16(baseGlyph); // BaseGlyph record: glyphID, firstLayerIndex, numLayers
+            colr.UInt16(0);
+            colr.UInt16(1);
+
+            colr.UInt16(outlineGlyph); // Layer record: glyphID, paletteIndex
+            colr.UInt16(0);
+
+            return colr.ToArray();
+        }
+
+        /// <summary>
+        /// Builds a COLR v1 table: base glyph -> PaintGlyph(outlineGlyph) -> PaintSolid, with an
         /// optional single-glyph ClipList. Offsets are constant because the layout is sequential.
         /// </summary>
         private static byte[] BuildColrV1GlyphSolid(
@@ -142,7 +223,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             colr.UInt32(0);   // varIndexMapOffset @26
             colr.UInt32(0);   // itemVariationStoreOffset @30
 
-            // BaseGlyphV1List: one record → the PaintGlyph paint.
+            // BaseGlyphV1List: one record -> the PaintGlyph paint.
             var baseListStart = colr.Position;
             colr.PatchUInt32(baseListOffsetPos, (uint)baseListStart);
             colr.UInt32(1);

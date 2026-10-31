@@ -35,11 +35,6 @@ namespace Avalonia.Skia
         {
             var outline = typeface.GetGlyphOutline(glyph);
 
-            if (outline is ImmutableGeometryImpl immutable)
-            {
-                outline = immutable.Inner;
-            }
-
             if (outline is not GeometryImpl { FillPath: { IsEmpty: false } glyphPath })
             {
                 return;

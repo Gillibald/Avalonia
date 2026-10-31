@@ -1469,6 +1469,9 @@ namespace Avalonia.Win32.Interop
         [DllImport("user32")]
         public static extern IntPtr GetMessageExtraInfo();
 
+        [DllImport("user32")]
+        public static extern short GetKeyState(VirtualKeyStates nVirtKey);
+
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "RegisterClassExW")]
         public static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
 
@@ -1718,7 +1721,10 @@ namespace Avalonia.Win32.Interop
         [DllImport("comdlg32.dll")]
         public static extern int CommDlgExtendedError();
 
-        public static bool ShCoreAvailable => LoadLibrary("shcore.dll") != IntPtr.Zero;
+        private static readonly Lazy<bool> s_getDpiForMonitorAvailable = new(() =>
+            GetProcAddress(LoadLibrary("shcore.dll"), nameof(GetDpiForMonitor)) != IntPtr.Zero);
+
+        public static bool GetDpiForMonitorAvailable => s_getDpiForMonitorAvailable.Value;
 
         [DllImport("shcore.dll")]
         public static extern void SetProcessDpiAwareness(PROCESS_DPI_AWARENESS value);
@@ -1727,7 +1733,7 @@ namespace Avalonia.Win32.Interop
         public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAWarenessContext);
 
         [DllImport("shcore.dll")]
-        public static extern long GetDpiForMonitor(IntPtr hmonitor, MONITOR_DPI_TYPE dpiType, out uint dpiX, out uint dpiY);
+        public static extern int GetDpiForMonitor(IntPtr hmonitor, MONITOR_DPI_TYPE dpiType, out uint dpiX, out uint dpiY);
 
         [DllImport("gdi32.dll")]
         public static extern int GetDeviceCaps(IntPtr hdc, DEVICECAP nIndex);

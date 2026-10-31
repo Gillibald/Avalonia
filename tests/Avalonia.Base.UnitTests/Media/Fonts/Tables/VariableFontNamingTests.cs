@@ -50,7 +50,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
         {
             var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
 
-            Assert.True(typeface.TryGetInstanceNames(default(NormalizedVariationPosition), out var names));
+            Assert.True(typeface.TryGetInstanceNames(Coordinates(), out var names));
 
             // "Text" names opsz=14 and is not elidable, so it joins the family like
             // DirectWrite's "Segoe UI Variable Text"; Regular and Roman are elided.
@@ -61,13 +61,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
         public void Inter_Variable_Optical_Size_Selects_The_Family_And_Weight_The_Style()
         {
             var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
-            var clone = typeface.WithVariations(new FontVariationSettings(new[]
-            {
-                new FontVariation(s_opsz, 32),
-                new FontVariation(s_wght, 600),
-            }));
 
-            Assert.True(clone.TryGetInstanceNames(clone.VariationPosition, out var names));
+            Assert.True(typeface.TryGetInstanceNames(Coordinates((s_opsz, 32), (s_wght, 600)), out var names));
 
             Assert.Equal(new FontInstanceNames("Inter Variable Display", "SemiBold"), names);
         }
@@ -81,13 +76,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             foreach (var instance in typeface.NamedInstances)
             {
-                var position = typeface.CreateNormalizedPosition(null, instance.Index);
+                Assert.True(typeface.TryGetInstanceNames(instance.Coordinates, out var names));
 
-                Assert.True(typeface.TryGetInstanceNames(position, out var fromPosition));
-                Assert.True(typeface.TryGetInstanceNames(instance.Coordinates, out var fromCoordinates));
-
-                Assert.Equal(new FontInstanceNames("Inter Variable Text", instance.Name), fromPosition);
-                Assert.Equal(fromPosition, fromCoordinates);
+                Assert.Equal(new FontInstanceNames("Inter Variable Text", instance.Name), names);
             }
         }
 
@@ -97,12 +88,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
             var typeface = SyntheticFont.FromAsset(AdobeBlankAsset).CreateGlyphTypeface();
 
             Assert.NotNull(typeface.StatTable);
-            Assert.True(typeface.TryGetInstanceNames(default(NormalizedVariationPosition), out var names));
+            Assert.True(typeface.TryGetInstanceNames(Coordinates(), out var names));
             Assert.Equal(new FontInstanceNames("Adobe Blank 2 VF", "Regular"), names);
 
-            var clone = typeface.WithVariations(Settings(s_wdth, 500));
-
-            Assert.False(clone.TryGetInstanceNames(clone.VariationPosition, out _));
+            Assert.False(typeface.TryGetInstanceNames(Coordinates((s_wdth, 500)), out _));
         }
 
         [Fact]
@@ -113,14 +102,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             Assert.Null(typeface.StatTable);
 
-            var bold = typeface.CreateNormalizedPosition(Settings(s_wght, 700));
-
-            Assert.True(typeface.TryGetInstanceNames(bold, out var names));
+            Assert.True(typeface.TryGetInstanceNames(Coordinates((s_wght, 700)), out var names));
             Assert.Equal(new FontInstanceNames("Inter Variable", "Bold"), names);
 
-            var between = typeface.CreateNormalizedPosition(Settings(s_wght, 450));
-
-            Assert.False(typeface.TryGetInstanceNames(between, out _));
+            Assert.False(typeface.TryGetInstanceNames(Coordinates((s_wght, 450)), out _));
         }
 
         [Fact]
@@ -128,7 +113,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
         {
             var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).CreateGlyphTypeface();
 
-            Assert.False(typeface.TryGetInstanceNames(default(NormalizedVariationPosition), out _));
+            Assert.False(typeface.TryGetInstanceNames(Coordinates(), out _));
         }
 
         [Fact]
@@ -197,6 +182,35 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
                 new[] { "opsz=12,GRAD=100", "opsz=48,GRAD=100" },
                 positions.Select(x => $"opsz={x[s_opsz]},GRAD={x[s_grad]}"));
             Assert.All(positions, x => Assert.Equal(2, x.Count));
+        }
+
+        [Fact]
+        public void Family_Positions_Stay_Bounded_When_An_Axis_Names_Many_Values()
+        {
+            var custom = OpenTypeTag.Parse("CUST");
+            var axes = new List<FontVariationAxis>(s_axes)
+            {
+                new(custom, "Custom", 0, 0, 4000, false),
+                new(s_grad, "Grade", 0, 0, 100, false),
+            };
+            var builder = new StatTableBuilder()
+                .Axis("CUST", 256, 0)
+                .Axis("GRAD", 257, 1)
+                .Format1(1, 0, 309, 0)
+                .Format1(1, 0, 309, 100);
+
+            for (var i = 0; i < 4000; i++)
+            {
+                builder.Format1(0, 0, 304, i);
+            }
+
+            var positions = VariableFontNaming.GetFamilyPositions(StatTable.TryParse(builder.Build()), axes);
+
+            Assert.InRange(positions.Count, 1, 64);
+            Assert.Equal(
+                positions.Count,
+                positions.Select(x => string.Join(",", x.OrderBy(c => c.Key.ToString())
+                    .Select(c => $"{c.Key}={c.Value}"))).Distinct().Count());
         }
 
         [Fact]
@@ -386,9 +400,6 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             return result;
         }
-
-        private static FontVariationSettings Settings(OpenTypeTag tag, double value)
-            => new(new[] { new FontVariation(tag, value) });
 
         private static string? GetName(ushort nameId) => s_names.TryGetValue(nameId, out var name) ? name : null;
     }

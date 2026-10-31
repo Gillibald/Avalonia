@@ -32,20 +32,16 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
             var layerListOffset = context.ColrTable.LayerV1ListOffset;
 
-            // Skip the 4-byte count field at the start of LayerList
-            var paintOffsetsStart = layerListOffset + 4L;
-
-            // Calculate the byte offset for the first paint offset of this glyph's layers
-            // Each offset is 4 bytes (Offset32). Compute in long so a hostile firstLayerIndex
-            // (up to ~4 billion) can't wrap the position negative and slip the bounds check.
-            var firstPaintOffsetPos = paintOffsetsStart + (long)firstLayerIndex * 4;
-
-            // Ensure we have enough data for all the paint offsets we need to read
-            var requiredBytes = firstPaintOffsetPos + (long)numLayers * 4;
-            if (requiredBytes > context.ColrData.Length)
+            // The slice must lie within the LayerList's own count (which ColrTable clamped to the
+            // offsets that fit in the table), not merely within the table bytes. 64-bit math keeps a
+            // hostile firstLayerIndex from wrapping.
+            if ((long)firstLayerIndex + numLayers > context.ColrTable.LayerV1Count)
             {
                 return false;
             }
+
+            // Skip the 4-byte count field at the start of LayerList; each entry is an Offset32.
+            var firstPaintOffsetPos = layerListOffset + 4L + (long)firstLayerIndex * 4;
 
             var paints = new List<Paint>((int)numLayers);
 
@@ -117,24 +113,25 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 color = Colors.Black;
             }
 
-            color = Color.FromArgb((byte)(color.A * alpha), color.R, color.G, color.B);
-
             if (isVariable)
             {
+                // The alpha delta applies to the paint alpha, so the palette color and the alpha stay
+                // separate until the resolver knows the instance.
                 var varIndexBase = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(5));
 
-                paint = new SolidVar(color, varIndexBase);
+                paint = new SolidVar(color, alpha, varIndexBase);
             }
             else
             {
-                paint = new Solid(color);
+                paint = new Solid(Color.FromArgb((byte)(color.A * alpha), color.R, color.G, color.B));
             }
 
             return true;
         }
     }
 
-    internal record SolidVar(Color Color, uint VarIndexBase) : Paint
+    /// <summary>PaintVarSolid: the palette color and the F2DOT14 paint alpha, not yet multiplied.</summary>
+    internal record SolidVar(Color PaletteColor, double Alpha, uint VarIndexBase) : Paint
     {
         public static bool TryParse(ReadOnlySpan<byte> span, in ColrContext context, out Paint? paint)
         {
@@ -177,19 +174,12 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 paintOffset + colorLineOffset,
                 in context,
                 isVarColorLine: isVariable,
-                out var immutableStops,
+                out var stops,
                 out var extend))
             {
                 return false;
             }
 
-            // Per-stop offset / alpha variation is already applied during colour-line parsing.
-            var stops = new GradientStop[immutableStops.Length];
-
-            for (int i = 0; i < immutableStops.Length; i++)
-            {
-                stops[i] = new GradientStop(immutableStops[i].Offset, immutableStops[i].Color);
-            }
 
             if (isVariable)
             {
@@ -243,19 +233,12 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             var colorLineAbsOffset = paintOffset + colorLineOffset;
 
             if (!PaintParsingHelpers.TryParseColorLine(context.ColrData.Span, colorLineAbsOffset, in context, isVarColorLine: isVariable,
-                out var immutableStops,
+                out var stops,
                 out var extend))
             {
                 return false;
             }
 
-            // Per-stop offset / alpha variation is already applied during colour-line parsing.
-            var stops = new GradientStop[immutableStops.Length];
-
-            for (int i = 0; i < immutableStops.Length; i++)
-            {
-                stops[i] = new GradientStop(immutableStops[i].Offset, immutableStops[i].Color);
-            }
 
             if (isVariable)
             {
@@ -304,10 +287,9 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             var startAngleFixed = BinaryPrimitives.ReadInt16BigEndian(span.Slice(8));
             var endAngleFixed = BinaryPrimitives.ReadInt16BigEndian(span.Slice(10));
 
-            // F2DOT14 sweep angles are in units of 180° per 1.0 of value. Keep them in those raw units
-            // here; NormalizeConicGradient multiplies by 180 to produce the degrees that
-            // IConicGradientBrush.Angle expects. (Converting to radians here would then be wrongly
-            // scaled by 180 instead of 180/π.)
+            // F2DOT14 sweep angles are in units of 180 degrees per 1.0 of value. They stay in those raw
+            // units here; NormalizeConicGradient multiplies by 180 to produce the degrees that
+            // IConicGradientBrush.Angle expects.
             var startAngle = PaintParsingHelpers.F2Dot14ToDouble(startAngleFixed);
             var endAngle = PaintParsingHelpers.F2Dot14ToDouble(endAngleFixed);
 
@@ -318,19 +300,12 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 colorLineAbsOffset,
                 in context,
                 isVarColorLine: isVariable,
-                out var immutableStops,
+                out var stops,
                 out var extend))
             {
                 return false;
             }
 
-            // Per-stop offset / alpha variation is already applied during colour-line parsing.
-            var stops = new GradientStop[immutableStops.Length];
-
-            for (int i = 0; i < immutableStops.Length; i++)
-            {
-                stops[i] = new GradientStop(immutableStops[i].Offset, immutableStops[i].Color);
-            }
 
             if (isVariable)
             {
@@ -415,7 +390,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             }
 
             // The referenced glyph's base paint is guarded by the offset the recursive
-            // PaintParser.TryParse below enters: a glyph cycle (G1 → G2 → G1) re-enters G1's base
+            // PaintParser.TryParse below enters: a glyph cycle (G1 -> G2 -> G1) re-enters G1's base
             // paint offset and trips cycle detection, so no separate glyph-id guard is needed.
             if (!PaintParser.TryParse(context.ColrData.Span, absolutePaintOffset, in context, in decycler, out var innerPaint))
             {
@@ -444,9 +419,14 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         {
             paint = null;
 
-            var minSize = isVariable ? 12 : 8; // 8 for fixed, 12 for variable (+ 4 bytes for varIndexBase)
+            // Both formats are uint8 format, Offset24 paint, Offset24 transform; the variable form's
+            // VarIndexBase is the last field of the VarAffine2x3 the transform offset points to.
+            if (span.Length < 7)
+            {
+                return false;
+            }
 
-            if (span.Length < minSize)
+            if (!PaintParsingHelpers.TryParseAffine2x3(span, isVariable, out var transform, out var varIndexBase))
             {
                 return false;
             }
@@ -463,12 +443,8 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            var transform = PaintParsingHelpers.ParseAffine2x3(span);
-
             if (isVariable)
             {
-                var varIndexBase = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(minSize - 4));
-
                 paint = new TransformVar(sourcePaint, transform, varIndexBase);
             }
             else
@@ -820,7 +796,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            // F2DOT14 angles: 180° per 1.0 of value, so multiply by π (not 2π)
+            // F2DOT14 angles: 180 degrees per 1.0 of value, so multiply by pi (not 2pi)
             var angle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(4))) * Math.PI;
 
             if (isVariable)
@@ -878,7 +854,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            // F2DOT14 angles: 180° per 1.0 of value, so multiply by π (not 2π)
+            // F2DOT14 angles: 180 degrees per 1.0 of value, so multiply by pi (not 2pi)
             var angle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(4))) * Math.PI;
             var centerX = BinaryPrimitives.ReadInt16BigEndian(span.Slice(6));
             var centerY = BinaryPrimitives.ReadInt16BigEndian(span.Slice(8));
@@ -938,7 +914,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            // F2DOT14 angles: 180° per 1.0 of value, so multiply by π (not 2π)
+            // F2DOT14 angles: 180 degrees per 1.0 of value, so multiply by pi (not 2pi)
             var xAngle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(4))) * Math.PI;
             var yAngle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(6))) * Math.PI;
 
@@ -997,7 +973,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            // F2DOT14 angles: 180° per 1.0 of value, so multiply by π (not 2π)
+            // F2DOT14 angles: 180 degrees per 1.0 of value, so multiply by pi (not 2pi)
             var xAngle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(4))) * Math.PI;
             var yAngle = PaintParsingHelpers.F2Dot14ToDouble(BinaryPrimitives.ReadInt16BigEndian(span.Slice(6))) * Math.PI;
             var centerX = BinaryPrimitives.ReadInt16BigEndian(span.Slice(8));

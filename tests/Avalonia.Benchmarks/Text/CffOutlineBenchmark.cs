@@ -80,7 +80,7 @@ internal static class CffFonts
 /// <summary>
 /// Per-glyph control-point bounds across outline formats. The glyf baseline reads the
 /// header bbox (O(1) after the loca lookup); CFF / CFF2 store no bbox and interpret the
-/// charstring on every call. This benchmark quantifies that asymmetry — and is the gauge
+/// charstring on every call. This benchmark quantifies that asymmetry and is the gauge
 /// for any bounds-caching optimization.
 /// </summary>
 [MemoryDiagnoser]
@@ -106,9 +106,9 @@ public class CffGlyphBoundsBenchmark : IDisposable
     private ushort[] _cff2Ids = Array.Empty<ushort>();
     private GlyphBounds[] _bounds = Array.Empty<GlyphBounds>();
 
-    // Skia native baseline: one SKFont per format, reading bounds through GetGlyphWidths — the call
+    // Skia native baseline: one SKFont per format, reading bounds through GetGlyphWidths, the call
     // GlyphRunImpl makes today. Skia's bounds are tight pixel boxes (size-scaled); ours are design-unit
-    // control boxes — so this compares the cost of "fetch bounds for N glyphs", not the box values.
+    // control boxes, so this compares the cost of "fetch bounds for N glyphs", not the box values.
     private readonly SKFont _skGlyf;
     private readonly SKFont _skCff;
     private readonly SKFont _skCff2;
@@ -160,7 +160,7 @@ public class CffGlyphBoundsBenchmark : IDisposable
     public bool GlyfVariableDefault() => _glyfVariable.TryGetGlyphBounds(_glyfVariableIds, _bounds.AsSpan(0, GlyphCount));
 
     // Variable glyf at a non-default instance: the header box is stale, so bounds come from the
-    // gvar-deformed outline interpreted once and memoised — steady state here is a per-glyph cache hit.
+    // gvar-deformed outline interpreted once and memoised; steady state here is a per-glyph cache hit.
     [Benchmark]
     public bool GlyfVaried() => _glyfVaried.TryGetGlyphBounds(_glyfVariableIds, _bounds.AsSpan(0, GlyphCount));
 
@@ -192,7 +192,7 @@ public class CffGlyphBoundsBenchmark : IDisposable
 }
 
 /// <summary>
-/// Single-glyph outline build (<see cref="GlyphTypeface.GetGlyphOutline"/> →
+/// Single-glyph outline build (<see cref="GlyphTypeface.GetGlyphOutline"/> to
 /// <see cref="IGeometryImpl"/>) across outline formats. Measures the geometry-emitting
 /// glyf walk / Type 2 charstring interpreter plus the platform geometry construction.
 /// </summary>
@@ -226,7 +226,7 @@ public class CffGlyphOutlineBenchmark : IDisposable
         _cff2 = CffFonts.Load(CffFonts.Cff2Asset);
         _cff2Varied = CffFonts.Vary(_cff2, 900f);
 
-        // 'O' / 'o' — a curve-heavy glyph present in every test font.
+        // 'O' / 'o': a curve-heavy glyph present in every test font.
         _glyfGlyph = _glyf.CharacterToGlyphMap['O'];
         _cffGlyph = _cff.CharacterToGlyphMap['O'];
         _cff2Glyph = _cff2.CharacterToGlyphMap['o'];

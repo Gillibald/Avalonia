@@ -3,11 +3,12 @@ using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Animation
 {
-    public class FontVariationSettingsTransitionTests
+    public class FontVariationSettingsTransitionTests : ScopedTestBase
     {
         private static readonly OpenTypeTag s_wght = OpenTypeTag.Parse("wght");
 

@@ -6,8 +6,8 @@ using Xunit;
 namespace Avalonia.Base.UnitTests.Media.Fonts.Tables.Cff
 {
     /// <summary>
-    /// Exercises FDSelect glyph → Font DICT mapping (CID-keyed CFF) on hand-built blobs — both the
-    /// flat per-glyph array (format 0) and the sorted ranges with binary search (format 3).
+    /// Exercises FDSelect glyph -> Font DICT mapping (CID-keyed CFF and CFF2) on hand-built blobs: the
+    /// flat per-glyph array (format 0) and the sorted ranges with binary search (formats 3 and 4).
     /// </summary>
     public class FdSelectTests
     {
@@ -52,7 +52,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables.Cff
             Assert.Equal(2, fdSelect.GetFd(6));
             Assert.Equal(2, fdSelect.GetFd(9));
 
-            // At / past the sentinel — no range contains it.
+            // At / past the sentinel no range contains it.
             Assert.Equal(0, fdSelect.GetFd(10));
         }
 
@@ -76,7 +76,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables.Cff
         public void Format3_Rejects_Non_Ascending_Ranges()
         {
             // Range starts out of order (6 before 3). The binary search assumes ascending starts,
-            // so an unsorted table would return a wrong (but in-bounds) FD → wrong Local Subrs.
+            // so an unsorted table would return a wrong (but in-bounds) FD, hence wrong Local Subrs.
             // Parse must reject it instead.
             var blob = BuildFormat3(new (int First, byte Fd)[] { (0, 0), (6, 1), (3, 2) }, sentinel: 10);
 
@@ -86,7 +86,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables.Cff
         [Fact]
         public void Format3_Rejects_Sentinel_Before_Last_Range_Start()
         {
-            // The sentinel (last-range end) precedes the final range start → an inverted final range.
+            // The sentinel (last-range end) precedes the final range start: an inverted final range.
             var blob = BuildFormat3(new (int First, byte Fd)[] { (0, 0), (8, 1) }, sentinel: 4);
 
             Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 10));
@@ -102,6 +102,77 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables.Cff
             blob[2] = 4; // nRanges = 4, but only one range's worth of bytes follows
 
             Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 10));
+        }
+
+        [Fact]
+        public void Format4_Maps_Ranges_With_Wide_Fd_Indices()
+        {
+            // Ranges: [0,2) -> fd 0 ; [2,5) -> fd 300 ; sentinel 5. Format 4 stores uint32 range starts
+            // and uint16 FD indices.
+            var blob = BuildFormat4(new (int First, int Fd)[] { (0, 0), (2, 300) }, sentinel: 5);
+            var fdSelect = FdSelect.Parse(blob, 0, glyphCount: 5);
+
+            Assert.NotNull(fdSelect);
+            Assert.Equal(0, fdSelect!.GetFd(0));
+            Assert.Equal(0, fdSelect.GetFd(1));
+            Assert.Equal(300, fdSelect.GetFd(2));
+            Assert.Equal(300, fdSelect.GetFd(4));
+            Assert.Equal(0, fdSelect.GetFd(5));
+        }
+
+        [Fact]
+        public void Format4_Rejects_Non_Ascending_Ranges()
+        {
+            var blob = BuildFormat4(new (int First, int Fd)[] { (0, 0), (6, 1), (3, 2) }, sentinel: 10);
+
+            Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 10));
+        }
+
+        [Fact]
+        public void Format4_Rejects_Sentinel_Before_Last_Range_Start()
+        {
+            var blob = BuildFormat4(new (int First, int Fd)[] { (0, 0), (8, 1) }, sentinel: 4);
+
+            Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 10));
+        }
+
+        [Fact]
+        public void Format4_Rejects_A_Truncated_Range_Array()
+        {
+            // Declares 4 ranges, but only one range and the sentinel follow.
+            var blob = BuildFormat4(new (int First, int Fd)[] { (0, 0) }, sentinel: 10);
+            blob[4] = 4;
+
+            Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 10));
+        }
+
+        [Fact]
+        public void Undefined_Format_Is_Rejected()
+        {
+            byte[] blob = { 5, 0, 0, 0, 0 };
+
+            Assert.Null(FdSelect.Parse(blob, 0, glyphCount: 2));
+        }
+
+        private static byte[] BuildFormat4((int First, int Fd)[] ranges, int sentinel)
+        {
+            var blob = new List<byte> { 4 };
+            WriteU32(blob, ranges.Length);
+
+            foreach (var (first, fd) in ranges)
+            {
+                WriteU32(blob, first);
+                WriteU16(blob, fd);
+            }
+
+            WriteU32(blob, sentinel);
+            return blob.ToArray();
+        }
+
+        private static void WriteU32(List<byte> blob, int value)
+        {
+            WriteU16(blob, (value >> 16) & 0xFFFF);
+            WriteU16(blob, value & 0xFFFF);
         }
 
         private static byte[] BuildFormat3((int First, byte Fd)[] ranges, int sentinel)

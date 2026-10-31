@@ -80,11 +80,8 @@ namespace Avalonia.Skia
 
         public IGeometryImpl CreateRectangleGeometry(Rect rect) => new RectangleGeometryImpl(rect);
 
-        /// <inheritdoc />
-        public IStreamGeometryImpl CreateStreamGeometry()
-        {
-            return new StreamGeometryImpl();
-        }
+        public IStreamGeometryBuilder CreateStreamGeometryBuilder(IGeometryImpl? source)
+            => new StreamGeometryBuilder(source);
 
         public IGeometryImpl CreateGeometryGroup(FillRule fillRule, IReadOnlyList<IGeometryImpl> children)
         {
@@ -194,7 +191,7 @@ namespace Avalonia.Skia
                 currentX += glyphRun.GlyphInfos[i].GlyphAdvance;
             }
 
-            return new StreamGeometryImpl(path, path);
+            return new SimpleGeometryImpl(path, path);
         }
 
         private static IGeometryImpl BuildManagedGlyphRunGeometry(GlyphRun glyphRun)
@@ -212,7 +209,7 @@ namespace Avalonia.Skia
                 currentX += info.GlyphAdvance;
             }
 
-            return new StreamGeometryImpl(path, path);
+            return new SimpleGeometryImpl(path, path);
         }
 
         /// <inheritdoc />

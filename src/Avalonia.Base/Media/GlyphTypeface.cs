@@ -441,12 +441,8 @@ namespace Avalonia.Media
                 // Load glyf table once and cache for reuse by GetGlyphOutline
                 GlyfTable.TryLoad(this, headTable, maxpTable, out _glyfTable);
 
-                // Load COLR and CPAL tables for color glyph support
-                ColrTable.TryLoad(this, out _colrTable);
-                CpalTable.TryLoad(this, out _cpalTable);
-
                 // Color bitmap strikes for the managed bitmap-glyph path: CBLC/CBDT (Google)
-                // first, sbix (Apple) as the alternative — real fonts carry one or the other.
+                // first, sbix (Apple) as the alternative; real fonts carry one or the other.
                 if (!Fonts.Tables.Bitmaps.CbdtTable.TryLoad(this, out _cbdtTable))
                 {
                     Fonts.Tables.Bitmaps.SbixTable.TryLoad(this, out _sbixTable);
@@ -495,9 +491,6 @@ namespace Avalonia.Media
             FamilyName = _nameTable?.FontFamilyName((ushort)CultureInfo.InvariantCulture.LCID) ?? "unknown";
 
             TypographicFamilyName = _nameTable?.GetNameById((ushort)CultureInfo.InvariantCulture.LCID, KnownNameIds.TypographicFamilyName) ?? FamilyName;
-
-            TypographicSubfamilyName = _nameTable?.GetNameById(
-                (ushort)CultureInfo.InvariantCulture.LCID, KnownNameIds.TypographicSubfamilyName) ?? string.Empty;
 
             if (_nameTable != null)
             {
@@ -603,6 +596,14 @@ namespace Avalonia.Media
                 HvglTable.TryLoad(this, _fvarTable?.Axes.Length ?? 0, out _hvglTable);
             }
 
+            // COLR / CPAL color glyphs. COLR runs after fvar: its ItemVariationStore validates its
+            // region records against the fvar axis count and is dropped on a mismatch.
+            if (headTable is not null)
+            {
+                ColrTable.TryLoad(this, out _colrTable);
+                CpalTable.TryLoad(this, out _cpalTable);
+            }
+
             static CultureInfo GetCulture(int lcid)
             {
                 if (lcid == ushort.MaxValue)
@@ -691,7 +692,6 @@ namespace Avalonia.Media
             // Shareable face-level metadata.
             FamilyName = source.FamilyName;
             TypographicFamilyName = source.TypographicFamilyName;
-            TypographicSubfamilyName = source.TypographicSubfamilyName;
             FamilyNames = source.FamilyNames;
             FaceNames = source.FaceNames;
             GlyphCount = source.GlyphCount;
@@ -800,7 +800,6 @@ namespace Avalonia.Media
 
             FamilyName = source.FamilyName;
             TypographicFamilyName = source.TypographicFamilyName;
-            TypographicSubfamilyName = source.TypographicSubfamilyName;
             FamilyNames = source.FamilyNames;
             FaceNames = source.FaceNames;
             GlyphCount = source.GlyphCount;
@@ -891,6 +890,14 @@ namespace Avalonia.Media
         /// </summary>
         internal FontCollectionKey GetProjectedKey(NormalizedVariationPosition variation)
         {
+            // Positions are absolute, so a clone at a position draws what its source draws there.
+            // The clone's own Weight / Style / Stretch describe only its own position and would
+            // misreport the default position and the axes the font lacks.
+            if (_sourceTypeface is not null)
+            {
+                return _sourceTypeface.GetProjectedKey(variation);
+            }
+
             if (_fvarTable is null || variation.IsDefault)
             {
                 return new FontCollectionKey(Style, Weight, Stretch);
@@ -994,7 +1001,6 @@ namespace Avalonia.Media
             };
         }
 
-
         /// <summary>
         /// Converts the normalized coordinate of <paramref name="axis"/> in
         /// <paramref name="position"/> back to user space, undoing the avar correction and the
@@ -1081,13 +1087,6 @@ namespace Avalonia.Media
         /// Gets the typographic family name of the font.
         /// </summary>
         public string TypographicFamilyName { get; }
-
-        /// <summary>
-        /// Gets the typographic subfamily name (name ID 17) of the font, the style name within
-        /// <see cref="TypographicFamilyName"/>. Empty when the font has no such name record, which
-        /// means the legacy subfamily name (name ID 2) already names the style.
-        /// </summary>
-        internal string TypographicSubfamilyName { get; }
 
         /// <summary>
         /// Gets a read-only mapping of localized culture-specific family names.
@@ -1485,42 +1484,6 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Composes the family and style name of this variable font's instance at
-        /// <paramref name="position"/>, following the STAT naming model described on
-        /// <see cref="VariableFontNaming"/>.
-        /// </summary>
-        /// <remarks>
-        /// Normalized coordinates are quantized, so each coordinate is matched back to the STAT or
-        /// named-instance value that normalizes to it before the names are selected.
-        /// </remarks>
-        /// <returns>
-        /// <c>false</c> for static fonts, and for a position that is no named instance of a font
-        /// without STAT axis values.
-        /// </returns>
-        internal bool TryGetInstanceNames(NormalizedVariationPosition position, out FontInstanceNames names)
-        {
-            if (_fvarTable is null)
-            {
-                names = default;
-                return false;
-            }
-
-            var axes = _fvarTable.Axes;
-            var userCoordinates = new Dictionary<OpenTypeTag, float>(axes.Length);
-
-            for (var i = 0; i < axes.Length; i++)
-            {
-                var tag = axes[i].Tag;
-
-                TryGetUserAxisValue(position, tag, out var userValue);
-
-                userCoordinates[tag] = SnapToDeclaredValue(i, position.GetCoordinateOrDefault(tag), userValue);
-            }
-
-            return TryGetInstanceNames(userCoordinates, out names);
-        }
-
-        /// <summary>
         /// Composes the family and style name of this variable font's instance at the user-space
         /// <paramref name="userCoordinates"/>, such as a named instance's coordinates.
         /// </summary>
@@ -1653,56 +1616,6 @@ namespace Avalonia.Media
                     familyNames.Add(name);
                 }
             }
-        }
-
-        /// <summary>
-        /// Returns the value a STAT axis value or a named instance declares for the fvar axis at
-        /// <paramref name="axisIndex"/> when it normalizes to <paramref name="normalized"/>;
-        /// otherwise <paramref name="userValue"/>.
-        /// </summary>
-        private float SnapToDeclaredValue(int axisIndex, float normalized, float userValue)
-        {
-            var axis = _fvarTable!.Axes[axisIndex];
-
-            if (normalized == 0f)
-            {
-                return axis.DefaultValue;
-            }
-
-            if (StatTable is { } stat)
-            {
-                foreach (var value in stat.AxisValues)
-                {
-                    foreach (var record in value.Records)
-                    {
-                        if (stat.DesignAxes[record.AxisIndex].Tag == axis.Tag &&
-                            NormalizesTo(axisIndex, record.Value, normalized))
-                        {
-                            return record.Value;
-                        }
-                    }
-                }
-            }
-
-            foreach (var instance in _fvarTable.Instances)
-            {
-                if (instance.Coordinates.TryGetValue(axis.Tag, out var value) &&
-                    NormalizesTo(axisIndex, value, normalized))
-                {
-                    return value;
-                }
-            }
-
-            return userValue;
-        }
-
-        // NormalizeAxisValue clamps, so a value outside the axis range would claim the axis ends.
-        private bool NormalizesTo(int axisIndex, float userValue, float normalized)
-        {
-            var axis = _fvarTable!.Axes[axisIndex];
-
-            return userValue >= axis.MinimumValue && userValue <= axis.MaximumValue &&
-                   NormalizeAxisValue(axisIndex, userValue) == normalized;
         }
 
         /// <summary>
@@ -2058,10 +1971,11 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Gets the x coordinate of a glyph's left phantom point: <c>xMin - lsb</c> from the glyf
-        /// header and hmtx, plus its gvar delta at this instance when the font has no HVAR. TrueType rasterizers translate
-        /// the outline so that this point lands on the origin, which is how an hmtx left side
-        /// bearing that differs from xMin, or a varied one, positions the glyph. A composite
-        /// with a USE_MY_METRICS component uses that component's left phantom point.
+        /// header and hmtx, plus its gvar delta at this instance when the font has no HVAR.
+        /// TrueType rasterizers translate the outline so that this point lands on the origin,
+        /// which is how an hmtx left side bearing that differs from xMin, or a varied one,
+        /// positions the glyph. A composite with a USE_MY_METRICS component uses that component's
+        /// left phantom point.
         /// </summary>
         private bool TryGetLeftPhantomX(ushort glyphIndex, ReadOnlySpan<float> activeCoords, out float leftPhantomX)
         {
@@ -2254,7 +2168,8 @@ namespace Avalonia.Media
                 hasVertical = _vmTable.TryGetMetrics(glyph, out vMetric);
             }
 
-            // Ink box from whichever outline table the font has (glyf header box / CFF / CFF2).
+            // Ink box at this instance's variation point from whichever outline table the font has
+            // (glyf: header box at the default instance, deformed outline otherwise; CFF / CFF2).
             // Unlike the batch fill, this reports per-glyph validity so an out-of-range glyph with
             // no metrics at all still returns false below.
             var hasBounds = TryGetGlyphInkBounds(glyph, out var box);
@@ -2324,8 +2239,8 @@ namespace Avalonia.Media
 
             metrics = new GlyphMetrics
             {
-                // Bounding box (ink extent) from the glyf header; side bearings fall back
-                // to hmtx/vmtx (HVAR/VVAR-adjusted) when the glyph has no outline data.
+                // Bounding box (ink extent) from the outline table; side bearings fall back
+                // to hmtx/vmtx (HVAR/VVAR-adjusted) when the glyph has no ink box.
                 XBearing = hasBounds ? box.XMin : (hasHorizontal ? leftSideBearing : (short)0),
                 YBearing = hasBounds ? box.YMax : (hasVertical ? topSideBearing : (short)0),
                 Width = hasBounds ? (ushort)box.Width : (ushort)0,
@@ -2376,33 +2291,19 @@ namespace Avalonia.Media
             bool hasHorizontal = false;
             bool hasVertical = false;
 
-            // hmtx + HVAR are fused inside HorizontalMetricsTable.TryGetMetrics — when
-            // variation is active we hand the cached scalers + HVAR table through so
+            // hmtx + HVAR are fused inside HorizontalMetricsTable.TryGetMetrics, so
             // hMetrics[i] is written exactly once per glyph rather than
-            // hmtx-writes-then-HVAR-overwrites.
+            // hmtx-writes-then-HVAR-overwrites. Without HVAR or scalers (static fonts and
+            // default-instance typefaces) it reads plain hmtx.
             if (_hasHorizontalMetrics && _hmTable != null)
             {
-                if (_hvarTable is not null && _hvarRegionScalers is not null)
-                {
-                    hasHorizontal = _hmTable.TryGetMetrics(glyphIndices, hMetrics, _hvarTable, _hvarRegionScalers);
-                }
-                else
-                {
-                    hasHorizontal = _hmTable.TryGetMetrics(glyphIndices, hMetrics);
-                }
+                hasHorizontal = _hmTable.TryGetMetrics(glyphIndices, hMetrics, _hvarTable, _hvarRegionScalers);
             }
 
             // vmtx + VVAR fuse in the same fashion HVAR fuses with hmtx.
             if (_hasVerticalMetrics && _vmTable != null)
             {
-                if (_vvarTable is not null && _vvarRegionScalers is not null)
-                {
-                    hasVertical = _vmTable.TryGetMetrics(glyphIndices, vMetrics, _vvarTable, _vvarRegionScalers);
-                }
-                else
-                {
-                    hasVertical = _vmTable.TryGetMetrics(glyphIndices, vMetrics);
-                }
+                hasVertical = _vmTable.TryGetMetrics(glyphIndices, vMetrics, _vvarTable, _vvarRegionScalers);
             }
 
             if (!hasHorizontal && !hasVertical)
@@ -2437,9 +2338,31 @@ namespace Avalonia.Media
                 }
             }
 
-            // Read every glyph's ink box from whichever outline table the font has (glyf header box /
-            // CFF / CFF2) in one pass. A font with no outline table, or one whose boxes cannot be
-            // read, falls back to hmtx/vmtx bearings with a zero box.
+            // A varied glyf glyph whose outline cannot be built has no ink box; like the single-glyph
+            // path, its bearings fall back to the (HVAR/VVAR-adjusted) side bearings.
+            if (_glyfTable is not null && _gvarTable is not null && _activeCoords is not null)
+            {
+                for (int i = 0; i < glyphIndices.Length; i++)
+                {
+                    var hasBounds = TryGetGlyphInkBounds(glyphIndices[i], out var b);
+
+                    metrics[i] = new GlyphMetrics
+                    {
+                        XBearing = hasBounds ? b.XMin : (hasHorizontal ? hMetrics[i].LeftSideBearing : (short)0),
+                        YBearing = hasBounds ? b.YMax : (hasVertical ? vMetrics[i].TopSideBearing : (short)0),
+                        Width = hasBounds ? (ushort)b.Width : (ushort)0,
+                        Height = hasBounds ? (ushort)b.Height : (ushort)0,
+                        AdvanceWidth = hasHorizontal ? hMetrics[i].AdvanceWidth : (ushort)0,
+                        AdvanceHeight = hasVertical ? vMetrics[i].AdvanceHeight : (ushort)0,
+                    };
+                }
+
+                return true;
+            }
+
+            // Read every glyph's ink box from whichever outline table the font has (glyf header box at
+            // the default instance, CFF / CFF2 / hvgl) in one pass. A font with no outline table, or one
+            // whose boxes cannot be read, falls back to hmtx/vmtx bearings with a zero box.
             if (_glyfTable != null || HasComputedGlyphBounds)
             {
                 Span<GlyphBounds> bounds = glyphIndices.Length <= 256
@@ -2488,8 +2411,11 @@ namespace Avalonia.Media
         /// Reads ink bounding boxes for a batch of glyphs from the font's <c>glyf</c> table.
         /// </summary>
         /// <remarks>
-        /// Allocation-free hot path for glyph ink-bounds computation: the <c>glyf</c> and
-        /// <c>loca</c> spans are fetched once for the whole batch. Use this rather than
+        /// Hot path for glyph ink-bounds computation: the <c>glyf</c> and <c>loca</c> spans are
+        /// fetched once for the whole batch. Each box is placed where <see cref="GetGlyphOutline"/>
+        /// places the outline at the default instance, with its left phantom point on the origin;
+        /// a simple glyph only adds an hmtx read for that, a composite also resolves its
+        /// USE_MY_METRICS chain. Use this rather than
         /// <see cref="TryGetGlyphMetrics(ReadOnlySpan{ushort}, Span{GlyphMetrics})"/> when
         /// only bounds are needed and advances are already known (e.g. from shaping).
         /// </remarks>
@@ -2519,14 +2445,6 @@ namespace Avalonia.Media
             HasComputedGlyphBounds ||
             (_glyfTable is not null && _gvarTable is not null && _activeCoords is not null);
 
-        /// <summary>
-        /// Reads a single glyph's control-point ink box at this instance's variation point and with its
-        /// simulations applied, from whichever outline table the font carries, <b>without building
-        /// geometry</b> (no render backend required). Unlike <see cref="TryFillInkBounds"/> (which reports table presence and zero-fills
-        /// invalid glyphs), this returns <c>false</c> for an out-of-range or malformed glyph — the
-        /// per-glyph contract the single <see cref="TryGetGlyphMetrics(ushort, out GlyphMetrics)"/> path
-        /// and the COLR v1 paint-graph extents fallback need.
-        /// </summary>
         /// <summary>
         /// Ink bounds for a color glyph in font units (y-up): the COLR v1 clip box — or the
         /// built paint-graph drawing's extent when the font omits one — or the union of the
@@ -2638,6 +2556,15 @@ namespace Avalonia.Media
                 .TryGetGlyphInkBounds(glyph, out box);
         }
 
+        /// <summary>
+        /// Reads a single glyph's control-point ink box at this instance's variation point and with its
+        /// simulations applied, from whichever outline table the font carries, <b>without building
+        /// geometry</b> (no render backend required). Unlike <see cref="TryFillInkBounds"/> (which
+        /// reports table presence and zero-fills invalid glyphs), this returns <c>false</c> for an
+        /// out-of-range or malformed glyph: the per-glyph contract the single
+        /// <see cref="TryGetGlyphMetrics(ushort, out GlyphMetrics)"/> path and the COLR v1 paint-graph
+        /// extents fallback need.
+        /// </summary>
         internal bool TryGetGlyphInkBounds(ushort glyph, out GlyphBounds box)
         {
             bool found;
@@ -2667,7 +2594,7 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Fills <paramref name="bounds"/> with each glyph's control-point ink box at this instance's
-        /// variation point, from whichever outline table the font carries — <c>glyf</c> (header box, or
+        /// variation point, from whichever outline table the font carries: <c>glyf</c> (header box, or
         /// the gvar-deformed outline at a non-default instance), CFF or CFF2 (computed from the
         /// charstring). Returns <c>false</c> when the font has no outline table.
         /// </summary>
@@ -2687,12 +2614,7 @@ namespace Avalonia.Media
                 }
                 else
                 {
-                    _glyfTable.GetGlyphBounds(glyphIndices, bounds);
-
-                    for (int i = 0; i < glyphIndices.Length; i++)
-                    {
-                        bounds[i] = PlaceByLeftPhantom(glyphIndices[i], bounds[i]);
-                    }
+                    _glyfTable.GetGlyphBounds(glyphIndices, bounds, _hmTable);
                 }
             }
             else if (HasComputedGlyphBounds)
@@ -2714,8 +2636,8 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Returns the control-point ink box for a CFF / CFF2 glyph from the unified glyph cache. The
-        /// box is set lazily — by this metrics path (interpreting the charstring) or by the geometry
-        /// build (taken from the outline's bounds), whichever happens first — then kept, so repeated
+        /// box is set lazily, by this metrics path (interpreting the charstring) or by the geometry
+        /// build (accumulated from the emitted points), whichever happens first, then kept, so repeated
         /// reads are an O(1) cache hit. Returns <c>false</c> for an out-of-range glyph.
         /// </summary>
         /// <remarks>
@@ -2801,9 +2723,8 @@ namespace Avalonia.Media
                     return true;
                 }
 
-                // A malformed glyph has no buildable outline: report false — matching the
-                // default-instance header path below and the TryGetGlyphInkBounds contract —
-                // instead of caching a misleading true + zero box. A valid empty glyph yields the
+                // A malformed glyph has no buildable outline, so it reports false and caches
+                // nothing, keeping the TryGetGlyphInkBounds contract. A valid empty glyph yields the
                 // zero box and is memoised like any other.
                 if (!TryComputeGlyfGlyphBounds(glyph, out box))
                 {
@@ -2814,40 +2735,13 @@ namespace Avalonia.Media
                 return true;
             }
 
-            if (_glyfTable!.TryGetGlyphBounds(glyph, out var xMin, out var yMin, out var xMax, out var yMax))
-            {
-                box = PlaceByLeftPhantom(glyph, new GlyphBounds(xMin, yMin, xMax, yMax));
-                return true;
-            }
-
-            box = default;
-            return false;
-        }
-
-        /// <summary>
-        /// Moves a <c>glyf</c> header box the way <see cref="GetGlyphOutline"/> moves the outline,
-        /// so its left phantom point lands on the origin. At a default instance that point is an
-        /// integer, so the move is exact.
-        /// </summary>
-        private GlyphBounds PlaceByLeftPhantom(ushort glyph, GlyphBounds box)
-        {
-            if (box == default || !TryGetLeftPhantomX(glyph, default, out var leftPhantomX) || leftPhantomX == 0)
-            {
-                return box;
-            }
-
-            var shift = (int)-leftPhantomX;
-
-            return new GlyphBounds(
-                (short)Math.Clamp(box.XMin + shift, short.MinValue, short.MaxValue),
-                box.YMin,
-                (short)Math.Clamp(box.XMax + shift, short.MinValue, short.MaxValue),
-                box.YMax);
+            // The header box is placed where GetGlyphOutline places the outline.
+            return _glyfTable!.TryGetGlyphBounds(glyph, _hmTable, out box);
         }
 
         /// <summary>
         /// Interprets one gvar-deformed <c>glyf</c> outline into its control-point box via
-        /// <see cref="BoundsGeometryContext"/> — the cold path behind <see cref="TryGetGlyfBounds"/> at a
+        /// <see cref="BoundsGeometryContext"/>, the cold path behind <see cref="TryGetGlyfBounds"/> at a
         /// non-default variable instance. Returns <c>false</c> for a malformed glyph (no buildable
         /// outline); a valid empty glyph (whitespace) yields the zero box, matching the
         /// default-instance header path.
@@ -2865,11 +2759,10 @@ namespace Avalonia.Media
                 return true;
             }
 
-            // TryGetGlyphOutlineBounds also returns false for an empty glyph; distinguish it from a
-            // malformed one via the header path, which yields the zero box for an empty glyph and
-            // false for a malformed one (out-of-range is already excluded by the caller).
+            // TryGetGlyphOutlineBounds also returns false for an empty glyph, which has the zero box.
+            // Any other glyph that fails to build is malformed, even when its header box is readable.
             box = default;
-            return _glyfTable.TryGetGlyphBounds(glyph, out _, out _, out _, out _);
+            return _glyfTable.IsEmptyGlyph(glyph);
         }
 
         private Fonts.Rasterization.GlyphCacheBudget? _cacheBudget;
@@ -2990,12 +2883,7 @@ namespace Avalonia.Media
 
         private GlyphCache GetOrCreateGlyphCache()
         {
-            // CFF / CFF2 entries survive geometry eviction for their interpreted bounds; glyf bounds
-            // are a cheap header read and are never cached, so those entries are dropped whole.
-            // Retention must include the variable-glyf case, not just CFF / CFF2: a non-default
-            // instance's ink box comes from interpreting the gvar-deformed outline, which is exactly
-            // the expensive-to-recompute box the retention flag exists to keep.
-            var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds, budgetBytes: int.MaxValue,
+            var created = new GlyphCache(retainBounds: RetainsGlyphBounds, budgetBytes: int.MaxValue,
                 budget: BudgetForNewCache());
 
             // First publisher wins; later racers reuse it.
@@ -3363,8 +3251,8 @@ namespace Avalonia.Media
 
         /// <summary>
         /// The per-instance glyph payload cache, or <c>null</c> until the first glyph needs ink bounds
-        /// or an outline. Exposed internally only so tests can assert cache lifecycle (e.g. that
-        /// disposal releases it).
+        /// or an outline. Exposed internally only so tests can assert cache lifecycle (e.g. that the
+        /// cache survives disposal, since its payloads can outlive the typeface).
         /// </summary>
         internal GlyphCache? GlyphCache => _glyphCache;
 
@@ -3454,17 +3342,19 @@ namespace Avalonia.Media
                     }
                 }
 
-                return null;   // outline-only glyph — caller should use GetGlyphOutline()
+                return null;   // outline-only glyph, caller should use GetGlyphOutline()
             }
 
             // A foreground-substituting drawing (CPAL 0xFFFF entries follow the text color) is
             // built uncached: the drawing cache keys by (glyph, palette) only, and widening every
             // key for the rare foreground-tinted glyph costs more than a per-record parse.
+            // A paint graph that cannot be built falls through to the cached drawing, which then
+            // uses the glyph's v0 layers if it has any.
             if (options?.Foreground is { } fg &&
-                _colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var v1Record))
+                _colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var v1Record) &&
+                CreateColorGlyphV1Drawing(glyphIndex, v1Record, NormalizePaletteIndex(options), fg) is { } tinted)
             {
-                return new ColorGlyphV1Drawing(this, _colrTable, _cpalTable, glyphIndex, v1Record,
-                    NormalizePaletteIndex(options), fg);
+                return tinted;
             }
 
             // Normalize the palette before keying the cache, so every out-of-range request shares the
@@ -3668,12 +3558,15 @@ namespace Avalonia.Media
                 if (_colrTable is { HasV1Data: true } colr && _cpalTable is not null &&
                     colr.TryGetBaseGlyphV1Record(glyphIndex, out var record))
                 {
-                    var v1 = new ColorGlyphV1Drawing(this, colr, _cpalTable, glyphIndex, record, entry.Palette,
+                    var v1 = CreateColorGlyphV1Drawing(glyphIndex, record, entry.Palette,
                         Color.FromUInt32(key.Foreground));
 
-                    drawing = v1;
-                    dependencies = v1.Dependencies;
-                    usesForeground = true;
+                    if (v1 is not null)
+                    {
+                        drawing = v1;
+                        dependencies = v1.Dependencies;
+                        usesForeground = true;
+                    }
                 }
             }
             else
@@ -3747,12 +3640,12 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Builds the colour-drawing payload for an in-range colour glyph — the cold path behind
+        /// Builds the colour-drawing payload for an in-range colour glyph, the cold path behind
         /// <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/>'s cache. The payload is a COLR
         /// v1 paint-graph drawing or a v0 layer drawing, resolved with the entry's (normalized) CPAL
         /// palette; <see cref="BuiltGeometry.Dependencies"/> are the layer glyphs it re-fetches on
-        /// every draw, and <see cref="BuiltGeometry.Cost"/> reflects the drawing's own (small) footprint
-        /// — the layer outlines are charged on their own entries.
+        /// every draw, and <see cref="BuiltGeometry.Cost"/> reflects the drawing's own (small) footprint;
+        /// the layer outlines are charged on their own entries.
         /// </summary>
         private BuiltGeometry BuildColorDrawingEntry(GlyphCacheEntry entry)
         {
@@ -3760,13 +3653,19 @@ namespace Avalonia.Media
             IGlyphDrawing? drawing = null;
             var dependencies = Array.Empty<ushort>();
 
+            // A v1 record whose paint graph cannot be built yields no v1 drawing; the glyph then uses
+            // its v0 layers if it has any, and otherwise has no drawing at all, so callers fall back
+            // to the outline instead of drawing nothing.
             if (_colrTable!.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var record))
             {
-                var v1 = new ColorGlyphV1Drawing(this, _colrTable, _cpalTable!, glyphIndex, record, entry.Palette);
-                drawing = v1;
-                dependencies = v1.Dependencies;
+                if (CreateColorGlyphV1Drawing(glyphIndex, record, entry.Palette, null) is { } v1)
+                {
+                    drawing = v1;
+                    dependencies = v1.Dependencies;
+                }
             }
-            else if (_colrTable.HasColorLayers(glyphIndex))
+
+            if (drawing is null && _colrTable.TryGetBaseGlyphRecord(glyphIndex, out _))
             {
                 drawing = new ColorGlyphDrawing(this, _colrTable, _cpalTable!, glyphIndex, entry.Palette);
                 dependencies = CollectColorLayerDependencies(glyphIndex);
@@ -3776,6 +3675,21 @@ namespace Avalonia.Media
 
             return new BuiltGeometry(drawing, cost, GlyphPayloadKind.ColorDrawing, dependencies,
                 default, hasBounds: false);
+        }
+
+        /// <summary>
+        /// Builds the COLR v1 drawing of <paramref name="glyphIndex"/> resolved with
+        /// <paramref name="palette"/> and, when given, <paramref name="foreground"/> for the CPAL
+        /// foreground sentinel; <c>null</c> when the paint graph cannot be built.
+        /// </summary>
+        private ColorGlyphV1Drawing? CreateColorGlyphV1Drawing(ushort glyphIndex, BaseGlyphV1Record record,
+            int palette, Color? foreground)
+        {
+            var context = new ColrContext(this, _colrTable!, _cpalTable!, palette, foreground, new ColrForegroundUse());
+
+            return TryGetBaseGlyphV1Paint(context, record, out var paint)
+                ? new ColorGlyphV1Drawing(context, glyphIndex, paint)
+                : null;
         }
 
         // The distinct layer glyph ids of a COLR v0 colour glyph.
@@ -3947,6 +3861,13 @@ namespace Avalonia.Media
         /// configuration and <see cref="FontSimulations"/> are taken from the typeface instance
         /// itself. The outline has no size, so simulated bold uses the renderer's strongest (small
         /// size) emboldening, and the outline contains the drawn glyph at every size.
+        /// <para>
+        /// As in TrueType rasterizers, the outline is placed with the glyph's left phantom point at
+        /// x = 0. That point sits at <c>xMin - lsb</c> from the <c>glyf</c> header and <c>hmtx</c>,
+        /// plus its <c>gvar</c> delta at a varied instance when the font has no <c>HVAR</c>; a
+        /// composite with a USE_MY_METRICS component uses that component's point. For most glyphs
+        /// the left side bearing equals xMin and the outline keeps its stored coordinates.
+        /// </para>
         /// </remarks>
         /// <param name="glyphIndex">The identifier of the glyph to retrieve.</param>
         /// <returns>
@@ -3978,9 +3899,10 @@ namespace Avalonia.Media
             return (IGeometryImpl?)cache.GetOrBuildGeometry(entry, _buildGlyphGeometry ??= BuildGlyphGeometryEntry);
         }
 
-        // Rough estimate of the bytes an outline payload retains — the native path verbs / points plus
-        // the managed ImmutableGeometryImpl / stream-geometry wrappers — used as the cache eviction
-        // weight. Calibrated against the churn benchmark, not an exact accounting.
+        // Estimated bytes an outline payload retains, used as the cache eviction weight: a fixed share
+        // for the managed platform geometry wrapper and the native path header, plus a per-segment
+        // share for the native path's verb and points (a cubic stores three two-float points). An
+        // estimate, not a measurement of native memory.
         private const int OutlineBaseCost = 96;
         private const int OutlineSegmentCost = 32;
 
@@ -3993,7 +3915,8 @@ namespace Avalonia.Media
         /// Builds the outline geometry for an in-range glyph — the cold path behind
         /// <see cref="GetGlyphOutline"/>'s cache. The geometry is <c>null</c> for a malformed or
         /// outline-less glyph (still memoised so it is not rebuilt); <see cref="BuiltGeometry.Cost"/> is
-        /// estimated from the segment count, and for CFF / CFF2 the ink box is taken from the geometry.
+        /// estimated from the segment count, and for CFF / CFF2 the ink box is the control-point box of
+        /// the points the build emitted.
         /// </summary>
         private BuiltGeometry BuildGlyphGeometryEntry(GlyphCacheEntry entry)
         {
@@ -4016,13 +3939,11 @@ namespace Avalonia.Media
             }
 
             // Where the metrics path computes the ink box by interpretation (CFF / CFF2 always; a
-            // non-default variable glyf instance, whose static header box is stale), the built outline's
-            // bounds ARE that control-point box, so reuse them — a later metrics read is then a cache
-            // hit with no separate interpret pass, and both producers write bit-identical values (the
-            // SetBoundsOnce race stays benign) because the box comes from the emitted control points,
-            // not from a backend's notion of bounds. Static / default-instance glyf bounds come from
-            // the header (cheaper than this), so leave them unset here. A simulated face's outline is
-            // emboldened or sheared, so its box is not the unsimulated one those paths cache.
+            // non-default variable glyf instance, whose static header box is stale), the build's
+            // control-point box is that ink box, so a later metrics read is a cache hit with no
+            // separate interpret pass. Static / default-instance glyf bounds come from the header
+            // (cheaper than this), so leave them unset here. A simulated face's outline is emboldened
+            // or sheared, so its box is not the unsimulated one those paths cache.
             var bounds = default(GlyphBounds);
             var hasBounds = false;
             if (outline is not null && RetainsGlyphBounds && FontSimulations == FontSimulations.None)
@@ -4036,8 +3957,8 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Builds the immutable outline geometry for an in-range glyph and reports the number of path
-        /// segments emitted (the cost proxy) plus the control-point box of the emitted points (the
-        /// CFF / CFF2 ink box). Returns <c>null</c> for a malformed glyph.
+        /// segments emitted (the cost proxy) and the control-point box of the emitted points. Returns
+        /// <c>null</c> for a malformed glyph.
         /// </summary>
         private IGeometryImpl? BuildGlyphOutline(ushort glyphIndex, out int segmentCount, out GlyphBounds controlBounds)
         {
@@ -4046,24 +3967,21 @@ namespace Avalonia.Media
 
             // Resolved per build (a cache miss) rather than captured statically: the locator scope can
             // change in-process (e.g. headless test sessions), and a static initializer would latch the
-            // first scope's interface — or poison the type if none is registered at first touch.
+            // first scope's interface, or poison the type if none is registered at first touch.
             var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
-            var geometry = renderInterface.CreateStreamGeometry();
+            using var builder = renderInterface.CreateStreamGeometryBuilder();
 
-            using (var ctx = geometry.Open())
+            // Count emitted segments to estimate the payload's retained size and accumulate the
+            // control-point box, without a second pass.
+            var counting = new SegmentCountingGeometryContext(builder);
+
+            // Build the outline in font design-unit space; callers apply the scale / position. The
+            // resulting geometry is immutable, so it can be cached and shared.
+            if (TryBuildOutline(glyphIndex, counting))
             {
-                // Count emitted segments to estimate the payload's retained size, and accumulate the
-                // control-point box for the entry's ink bounds, without a second pass.
-                var counting = new SegmentCountingGeometryContext(ctx);
-
-                // Build the outline in font design-unit space; callers apply the scale / position.
-                // Wrapped so the shared, cacheable result is immutable.
-                if (TryBuildOutline(glyphIndex, counting))
-                {
-                    segmentCount = counting.SegmentCount;
-                    controlBounds = counting.GetControlBounds();
-                    return new ImmutableGeometryImpl(geometry);
-                }
+                segmentCount = counting.SegmentCount;
+                controlBounds = counting.GetControlBounds();
+                return builder.ToGeometry();
             }
 
             return null;
@@ -4155,24 +4073,6 @@ namespace Avalonia.Media
             }
 
             return built;
-        }
-
-        /// <summary>
-        /// Per-glyph memo of built outline geometries. <see cref="State"/> is a parallel computed-flag
-        /// array (0 = not yet computed) read / written with <see cref="Volatile"/> so the geometry
-        /// reference is visible before the flag flips. <c>null</c> in <see cref="Outlines"/> is a valid
-        /// memoised result (a malformed glyph), which is why the flag — not the reference — marks "done".
-        /// </summary>
-        private sealed class OutlineCache
-        {
-            public readonly IGeometryImpl?[] Outlines;
-            public readonly byte[] State;
-
-            public OutlineCache(int glyphCount)
-            {
-                Outlines = new IGeometryImpl?[glyphCount];
-                State = new byte[glyphCount];
-            }
         }
 
         /// <summary>
@@ -4422,12 +4322,23 @@ namespace Avalonia.Media
         /// clone.
         /// </returns>
         /// <remarks>
+        /// <para>
         /// Composition follows CSS: explicit settings beat the receiver's current
-        /// position per mentioned axis — including a mention that puts an axis back at
-        /// its default — while unmentioned axes keep the receiver's position. That is
-        /// what keeps a platform-styled match (Bold → <c>wght 700</c>) bold when the
+        /// position per mentioned axis, including a mention that puts an axis back at
+        /// its default, while unmentioned axes keep the receiver's position. That is
+        /// what keeps a platform-styled match (Bold, <c>wght 700</c>) bold when the
         /// user only sets <c>wdth</c>.
+        /// </para>
+        /// <para>
+        /// A clone is owned by the default-instance typeface it was created from, whichever
+        /// typeface <see cref="WithVariations"/> was called on. Disposing that typeface
+        /// disposes every clone, and calling <see cref="Dispose()"/> on a clone has no effect.
+        /// Keep the default-instance typeface alive for as long as any clone is in use.
+        /// </para>
         /// </remarks>
+        /// <exception cref="ObjectDisposedException">
+        /// The default-instance typeface this typeface belongs to has been disposed.
+        /// </exception>
         public GlyphTypeface WithVariations(FontVariationSettings? settings, int? instanceIndex = null)
             => instanceIndex is null
                 ? WithVariationOverrides(settings)
@@ -4488,6 +4399,14 @@ namespace Avalonia.Media
         /// </remarks>
         internal GlyphTypeface WithVariation(NormalizedVariationPosition variation)
         {
+            // A disposed source has emptied its cache, so a clone created now would sit on
+            // released resources and never be disposed. Clones are disposed with their
+            // source, so this check covers them too.
+            if (_isDisposed)
+            {
+                throw new ObjectDisposedException(nameof(GlyphTypeface));
+            }
+
             // Static font — no axes to vary on; silently ignore non-default requests.
             if (_fvarTable is null)
             {
@@ -4605,6 +4524,13 @@ namespace Avalonia.Media
 
         public void Dispose()
         {
+            // A variation clone stays in its source's cache and is handed out again for the
+            // same position, so only the source may dispose it.
+            if (_sourceTypeface is not null)
+            {
+                return;
+            }
+
             Dispose(true);
             GC.SuppressFinalize(this);
         }
@@ -4839,7 +4765,7 @@ namespace Avalonia.Media
             {
                 foreach (var entry in cache)
                 {
-                    entry.Value.Dispose();
+                    entry.Value.Dispose(true);
                 }
                 cache.Clear();
             }
@@ -4918,7 +4844,8 @@ namespace Avalonia.Media
 
             var absolutePaintOffset = _colrTable!.GetAbsolutePaintOffset(record.PaintOffset);
 
-            var decycler = PaintDecycler.Rent();
+            // One decycler per glyph: its edge budget covers this glyph's whole paint graph.
+            var decycler = new PaintDecycler();
             try
             {
                 if (!PaintParser.TryParse(_colrTable.ColrData.Span, absolutePaintOffset, in context, in decycler, out var parsedPaint))
@@ -4932,13 +4859,9 @@ namespace Avalonia.Media
             }
             catch (DecyclerException)
             {
-                // A cyclic or over-deep paint graph degrades to "no color drawing" rather than
-                // escaping the public GetGlyphDrawing API.
+                // A cyclic, over-deep or over-budget paint graph degrades to "no color drawing"
+                // rather than escaping the public GetGlyphDrawing API.
                 return false;
-            }
-            finally
-            {
-                PaintDecycler.Return(decycler);
             }
         }
     }
@@ -4968,7 +4891,7 @@ namespace Avalonia.Media
         public GlyphDrawingType Type => GlyphDrawingType.ColorLayers;
 
         /// <summary>
-        /// The union of the layers' control-point ink boxes, flipped to drawing space (Y-down) —
+        /// The union of the layers' control-point ink boxes, flipped to drawing space (Y-down),
         /// computed once at parse time from the outline tables' bounds path, so no geometry is built
         /// and no render backend is required just to size the glyph.
         /// </summary>
@@ -5008,7 +4931,7 @@ namespace Avalonia.Media
             }
 
             // One pushed transform maps font space (Y-up design units) to drawing space at the origin,
-            // so every cached design-space outline is drawn as-is — no per-layer transformed clone.
+            // so every cached design-space outline is drawn as-is, no per-layer transformed clone.
             using (context.PushTransform(Matrix.CreateScale(1, -1) * Matrix.CreateTranslation(origin.X, origin.Y)))
             {
                 foreach (var layerRecord in layerRecords)
@@ -5037,54 +4960,50 @@ namespace Avalonia.Media
     {
         private readonly ColrContext _context;
         private readonly ushort _glyphIndex;
-        private readonly int _paletteIndex;
 
         private readonly Rect _bounds;
-        private readonly Paint? _paint;
+        private readonly Paint _paint;
         private readonly ushort[] _dependencies;
 
-        public ColorGlyphV1Drawing(GlyphTypeface glyphTypeface, ColrTable colrTable, CpalTable cpalTable,
-            ushort glyphIndex, BaseGlyphV1Record record, int paletteIndex = 0, Color? foreground = null)
+        public ColorGlyphV1Drawing(ColrContext context, ushort glyphIndex, Paint paint)
         {
-            var foregroundUse = new ColrForegroundUse();
-
-            _context = new ColrContext(glyphTypeface, colrTable, cpalTable, paletteIndex, foreground, foregroundUse);
+            _context = context;
             _glyphIndex = glyphIndex;
-            _paletteIndex = paletteIndex;
 
-            var dependencies = Array.Empty<ushort>();
+            // The base glyph's ClipBox clips everything the glyph paints, so it wraps the root paint
+            // and is pushed on every draw.
+            var hasClipBox = _context.ColrTable.TryGetClipBox(_glyphIndex, _context.ActiveCoords, out var clipRect);
+            _paint = hasClipBox ? new ResolvedClipBox(clipRect, paint) : paint;
 
-            if (glyphTypeface.TryGetBaseGlyphV1Paint(_context, record, out _paint))
+            // Traverse the paint graph once (no render backend) to collect the referenced layer
+            // glyphs, the drawing's cache dependencies, and, as a by-product, the conservative
+            // painted extent. COLR v1 paint graphs are in font space (Y-up), so any extent is
+            // flipped to drawing space (Y-down) to match Draw's transform. The traverser walks
+            // the already-resolved (acyclic) paint tree, so no decycler is needed here.
+            var analysis = new ColorGlyphV1BoundsPainter(_context);
+
+            PaintTraverser.Traverse(_paint, analysis);
+
+            _dependencies = analysis.Dependencies;
+
+            if (hasClipBox)
             {
-                // Traverse the paint graph once (no render backend) to collect the referenced layer
-                // glyphs — the drawing's cache dependencies — and, as a by-product, the conservative
-                // painted extent. COLR v1 paint graphs are in font space (Y-up), so any extent is
-                // flipped to drawing space (Y-down) to match Draw's transform. The traverser walks
-                // the already-resolved (acyclic) paint tree, so no decycler is needed here.
-                var analysis = new ColorGlyphV1BoundsPainter(_context);
-
-                PaintTraverser.Traverse(_paint, analysis, Matrix.Identity);
-
-                dependencies = analysis.Dependencies;
-
-                if (_context.ColrTable.TryGetClipBox(_glyphIndex, _context.ActiveCoords, out var clipRect))
-                {
-                    _bounds = clipRect.TransformToAABB(Matrix.CreateScale(1, -1));
-                }
-                else if (analysis.HasBounds)
-                {
-                    // No ClipList (the common case): fall back to the union of the painted outlines'
-                    // control-point extents. Stays empty when the font carries no buildable outline
-                    // for the painted glyphs, rather than guessing.
-                    _bounds = analysis.Bounds.TransformToAABB(Matrix.CreateScale(1, -1));
-                }
+                _bounds = clipRect.TransformToAABB(Matrix.CreateScale(1, -1));
+            }
+            else if (analysis.HasBounds)
+            {
+                // No ClipList (the common case): fall back to the union of the painted outlines'
+                // control-point extents. Stays empty when the font carries no buildable outline
+                // for the painted glyphs, rather than guessing.
+                _bounds = analysis.Bounds.TransformToAABB(Matrix.CreateScale(1, -1));
             }
 
-            _dependencies = dependencies;
-            UsesForeground = foregroundUse.Used;
+            // Paint resolution, which ran before this drawing was made, marks the context's
+            // foreground use.
+            UsesForeground = _context.ForegroundUse?.Used ?? false;
         }
 
-        public GlyphDrawingType Type => GlyphDrawingType.ColorLayers;
+        public GlyphDrawingType Type => GlyphDrawingType.ColorPaintGraph;
 
         public Rect Bounds => _bounds;
 
@@ -5100,11 +5019,6 @@ namespace Avalonia.Media
 
         public void Draw(DrawingContext context, Point origin)
         {
-            if (_paint == null)
-            {
-                return;
-            }
-
             // No decycler here: the paint tree was already resolved (and made acyclic) at parse
             // time, so the traverser just walks it. The painter is disposed via `using` so that a
             // throw mid-paint unwinds any transform/clip/layer it pushed onto the caller's context
@@ -5112,7 +5026,7 @@ namespace Avalonia.Media
             using (context.PushTransform(Matrix.CreateScale(1, -1) * Matrix.CreateTranslation(origin)))
             using (var painter = new ColorGlyphV1Painter(context, _context))
             {
-                PaintTraverser.Traverse(_paint, painter, Matrix.Identity);
+                PaintTraverser.Traverse(_paint, painter);
             }
         }
     }

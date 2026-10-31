@@ -60,6 +60,32 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [InlineData(925)]
+        [InlineData(975)]
+        public void Weight_Beyond_The_Axis_Range_Off_The_50_Grid_Uses_The_Axis_Maximum(int weight)
+        {
+            using (Start(out var root))
+            {
+                var glyphTypeface = Resolve(new Typeface(InterVariable, weight: (FontWeight)weight));
+
+                Assert.Equal(FontSimulations.Bold, glyphTypeface.FontSimulations);
+                Assert.Equal(Position(root, "wght=900"), glyphTypeface.VariationPosition);
+            }
+        }
+
+        [Fact]
+        public void Weight_Below_The_Axis_Range_Off_The_50_Grid_Uses_The_Axis_Minimum()
+        {
+            using (Start(out var root))
+            {
+                var glyphTypeface = Resolve(new Typeface(InterVariable, weight: (FontWeight)75));
+
+                Assert.Equal(FontSimulations.None, glyphTypeface.FontSimulations);
+                Assert.Equal(Position(root, "wght=100"), glyphTypeface.VariationPosition);
+            }
+        }
+
         [Fact]
         public void Italic_Request_Simulates_Oblique_Over_The_Upright_Face()
         {
@@ -154,6 +180,42 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Family_Of_A_Varied_Clone_Projects_Named_Instances_From_The_Source()
+        {
+            using (Start(out var root, out var collection))
+            {
+                // The family holds only the wght=700 clone, so its named instances are matched
+                // from the clone. The Regular instance sits at the default position and draws
+                // wght 400, whatever the clone reports.
+                collection.AddFamily("Inter Clone", root.WithVariations(FontVariationSettings.Parse("wght=700")));
+
+                var glyphTypeface = Resolve(new Typeface(CollectionKey + "#Inter Clone", weight: FontWeight.Bold));
+
+                Assert.Equal(FontSimulations.None, glyphTypeface.FontSimulations);
+                Assert.Equal(FontWeight.Bold, glyphTypeface.Weight);
+                Assert.Equal(Position(root, "wght=700"), glyphTypeface.VariationPosition);
+            }
+        }
+
+        [Fact]
+        public void Slant_Axis_That_Cannot_Reach_Upright_Is_Not_An_Exact_Normal_Match()
+        {
+            using (Start(out _, out var collection))
+            {
+                // A variable face slanted at every position (slnt -15 .. -5) and a static upright
+                // Bold face. A Normal request prefers the upright face over a slanted position.
+                collection.AddFamily("Mixed", CreateAlwaysSlantedFace());
+                collection.AddFamily("Mixed", Resolve(new Typeface(CollectionKey + "#Inter", weight: FontWeight.Bold)));
+
+                var glyphTypeface = Resolve(new Typeface(CollectionKey + "#Mixed", weight: FontWeight.SemiBold));
+
+                Assert.Equal(FontStyle.Normal, glyphTypeface.Style);
+                Assert.Equal(FontWeight.Bold, glyphTypeface.Weight);
+                Assert.Empty(glyphTypeface.VariationAxes);
+            }
+        }
+
+        [Fact]
         public void FontVariations_Override_Only_Their_Axes_Of_The_Resolved_Position()
         {
             using (Start(out var root))
@@ -204,6 +266,36 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static NormalizedVariationPosition Position(GlyphTypeface root, string settings)
             => root.CreateNormalizedPosition(FontVariationSettings.Parse(settings));
+
+        /// <summary>
+        /// Inter Variable with its fvar replaced by a slnt axis of -15 .. -5 (default -5) and
+        /// a wght axis of 100 .. 900, and no named instances.
+        /// </summary>
+        private static GlyphTypeface CreateAlwaysSlantedFace()
+        {
+            var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+
+            using var stream = assetLoader.Open(
+                new Uri($"resm:{AssetsNamespace}.InterVariable.ttf?assembly=Avalonia.Skia.UnitTests"));
+
+            var fvar = new BigEndianBuffer()
+                .UInt16(1)   // majorVersion
+                .UInt16(0)   // minorVersion
+                .UInt16(16)  // axesArrayOffset
+                .UInt16(2)   // reserved
+                .UInt16(2)   // axisCount
+                .UInt16(20)  // axisSize
+                .UInt16(0)   // instanceCount
+                .UInt16(0);  // instanceSize
+
+            fvar.Tag("slnt").Fixed(-15).Fixed(-5).Fixed(-5).UInt16(0).UInt16(0);
+            fvar.Tag("wght").Fixed(100).Fixed(400).Fixed(900).UInt16(0).UInt16(0);
+
+            return SyntheticFont.FromStream(stream)
+                .Replace("fvar", fvar.ToArray())
+                .Remove("avar")
+                .CreateGlyphTypeface();
+        }
 
         private static IDisposable Start(out GlyphTypeface interVariable) => Start(out interVariable, out _);
 

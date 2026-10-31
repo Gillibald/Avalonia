@@ -100,6 +100,7 @@ namespace Avalonia.Android
                 .Bind<IRenderLoop>().ToConstant(RenderLoop.FromTimer(Timer))
                 .Bind<PlatformHotkeyConfiguration>().ToSingleton<PlatformHotkeyConfiguration>()
                 .Bind<KeyGestureFormatInfo>().ToConstant(new KeyGestureFormatInfo(new Dictionary<Key, string>() { }))
+                .Bind<IPlatformDragSource>().ToConstant(new AndroidDragSource())
                 .Bind<IActivatableLifetime>().ToConstant(new AndroidActivatableLifetime());
 
             var graphics = InitializeGraphics(Options);
@@ -120,7 +121,7 @@ namespace Avalonia.Android
             Compositor = new Compositor(graphics);
             AvaloniaLocator.CurrentMutable.Bind<Compositor>().ToConstant(Compositor);
         }
-        
+
         private static IPlatformGraphics? InitializeGraphics(AndroidPlatformOptions opts)
         {
             if (opts.RenderingMode is null || !opts.RenderingMode.Any())

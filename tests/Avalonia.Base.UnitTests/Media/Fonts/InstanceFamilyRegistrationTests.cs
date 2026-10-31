@@ -77,10 +77,45 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 Assert.Empty(FontCollectionBase.GetInstanceFamilies(root));
                 Assert.True(collection.TryAddGlyphTypeface(root));
 
-                Assert.False(collection.TryGetInstanceFamilyFaces("Inter Variable", out _));
                 Assert.True(collection.TryGetGlyphTypeface("Inter Variable", FontStyle.Normal,
                     FontWeight.Normal, FontStretch.Normal, out var glyphTypeface));
                 Assert.Same(root, glyphTypeface);
+            }
+        }
+
+        [Fact]
+        public void Instance_Family_Lookup_After_Disposal_Does_Not_Throw()
+        {
+            using (Start())
+            {
+                var root = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
+                var collection = new TestFontCollection();
+
+                Assert.True(collection.TryAddGlyphTypeface(root));
+
+                ((IDisposable)collection).Dispose();
+
+                var exception = Record.Exception(() => collection.TryGetGlyphTypeface("Inter Variable Display",
+                    FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+
+                Assert.Null(exception);
+            }
+        }
+
+        [Fact]
+        public void Instance_Family_Of_A_Disposed_Variable_Face_Does_Not_Resolve()
+        {
+            using (Start())
+            {
+                var root = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
+                var collection = new TestFontCollection();
+
+                Assert.True(collection.TryAddGlyphTypeface(root));
+
+                root.Dispose();
+
+                Assert.False(collection.TryGetGlyphTypeface("Inter Variable Display", FontStyle.Normal,
+                    FontWeight.Normal, FontStretch.Normal, out _));
             }
         }
 
@@ -95,6 +130,68 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 Assert.True(collection.TryAddGlyphTypeface(root));
 
                 Assert.Equal(new[] { "Inter" }, collection.Select(x => x.Name));
+            }
+        }
+
+        public enum Registration
+        {
+            StaticFirst,
+            VariableFirst,
+            VariableFirstAndLookedUp,
+        }
+
+        [Theory]
+        [InlineData(Registration.StaticFirst)]
+        [InlineData(Registration.VariableFirst)]
+        [InlineData(Registration.VariableFirstAndLookedUp)]
+        public void Instance_Family_Named_Like_A_Font_Of_Another_Source_Leaves_That_Family_To_The_Font(
+            Registration registration)
+        {
+            using (Start())
+            {
+                // STAT composes "Inter Variable Display" for the variable font's opsz=32 instances.
+                var root = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
+                var bold = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular)
+                    .Replace("name", WriteNameTable(new List<(ushort, ushort, ushort, ushort, byte[])>
+                    {
+                        (3, 1, 0x0409, 1, Encoding.BigEndianUnicode.GetBytes("Inter Variable Display")),
+                        (3, 1, 0x0409, 2, Encoding.BigEndianUnicode.GetBytes("Bold")),
+                    }))
+                    .PatchUInt16("OS/2", 4, 700)
+                    .CreateGlyphTypeface();
+                var collection = new TestFontCollection();
+
+                Assert.Equal("Inter Variable Display", bold.FamilyName);
+                Assert.Equal(FontWeight.Bold, bold.Weight);
+
+                if (registration == Registration.StaticFirst)
+                {
+                    Assert.True(collection.TryAddGlyphTypeface(bold));
+                    Assert.True(collection.TryAddGlyphTypeface(root));
+                }
+                else
+                {
+                    Assert.True(collection.TryAddGlyphTypeface(root));
+
+                    if (registration == Registration.VariableFirstAndLookedUp)
+                    {
+                        Assert.True(collection.TryGetGlyphTypeface("Inter Variable Display", FontStyle.Normal,
+                            FontWeight.Normal, FontStretch.Normal, out _));
+                    }
+
+                    Assert.True(collection.TryAddGlyphTypeface(bold));
+                }
+
+                Assert.True(collection.TryGetGlyphTypeface("Inter Variable Display", FontStyle.Normal,
+                    FontWeight.Normal, FontStretch.Normal, out var regular));
+                Assert.True(collection.TryGetGlyphTypeface("Inter Variable Display", FontStyle.Normal,
+                    FontWeight.Bold, FontStretch.Normal, out var boldMatch));
+
+                Assert.Same(bold, regular);
+                Assert.Same(bold, boldMatch);
+                Assert.All(collection._glyphTypefaceCache["Inter Variable Display"].Values,
+                    x => Assert.Empty(x!.VariationAxes));
+                Assert.Single(collection, x => x.Name == "Inter Variable Display");
             }
         }
 
@@ -132,6 +229,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             records.Add((3, 1, German, familyNameId, Encoding.BigEndianUnicode.GetBytes("Inter Variabel")));
             records.Add((3, 1, German, displayNameId, Encoding.BigEndianUnicode.GetBytes("Anzeige")));
 
+            return WriteNameTable(records);
+        }
+
+        /// <summary>
+        /// Writes name records as a format 0 <c>name</c> table.
+        /// </summary>
+        private static byte[] WriteNameTable(
+            List<(ushort Platform, ushort Encoding, ushort Language, ushort NameId, byte[] Value)> records)
+        {
             // Records are sorted by platform, encoding, language and name ID.
             records = records
                 .OrderBy(x => x.Platform).ThenBy(x => x.Encoding).ThenBy(x => x.Language).ThenBy(x => x.NameId)

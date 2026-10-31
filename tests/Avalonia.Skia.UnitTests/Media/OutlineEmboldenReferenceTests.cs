@@ -124,7 +124,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             Assert.NotNull(geometry);
 
-            var inner = Assert.IsAssignableFrom<GeometryImpl>(((ImmutableGeometryImpl)geometry!).Inner);
+            var inner = Assert.IsAssignableFrom<GeometryImpl>(geometry);
 
             return inner.FillPath!.Points.Select(p => new Point(p.X, p.Y)).ToList();
         }
