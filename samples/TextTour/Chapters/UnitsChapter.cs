@@ -20,6 +20,7 @@ namespace TextTour.Chapters
 
         private readonly GlyphPainter _glyphs = new();
         private readonly List<TextLayout> _graphemeLayouts = new();
+        private readonly List<TextLayout> _graphemeCellLayouts = new();
         private Model? _model;
         private int _hoverCodepoint = -1;
 
@@ -162,8 +163,8 @@ namespace TextTour.Chapters
                 grid.Band(context, analysis.Graphemes, r => r, model.RowTop(2), model.RowHeight,
                     r => CodepointCount(analysis, r) > 1 ? p.SeriesFill(3) : p.SeriesFill(2),
                     r => CodepointCount(analysis, r) > 1 ? p.Series(3) : p.Series(2),
-                    r => CodepointCount(analysis, r) is var n and > 1 ? $"{n} cp" : string.Empty,
-                    labelSize, p.Foreground);
+                    _ => null, labelSize, p.Foreground);
+                DrawGraphemeCells(context, model, analysis, labelSize);
             }
 
             // Row 4: glyph clusters span their characters and show the glyphs shaping chose.
@@ -199,6 +200,56 @@ namespace TextTour.Chapters
             }
         }
 
+        /// <summary>
+        /// Each grapheme's own text in its cell, laid out with the string's font and culture so
+        /// fallback picks the same faces; a grapheme of several code points adds their count when
+        /// the cell has room for both.
+        /// </summary>
+        private void DrawGraphemeCells(DrawingContext context, Model model, TextAnalysis analysis, double labelSize)
+        {
+            var p = Palette;
+
+            for (var g = 0; g < analysis.Graphemes.Count; g++)
+            {
+                var range = analysis.Graphemes[g];
+                var stripe = model.Grid.StripeOf(range.Start);
+
+                if (stripe is null)
+                {
+                    continue;
+                }
+
+                var span = model.Grid.Spans(range).First(s => s.Stripe == stripe);
+                var box = new Rect(span.X0, stripe.Top + model.RowTop(2), span.X1 - span.X0, model.RowHeight);
+                var layout = _graphemeCellLayouts[g];
+                var count = CodepointCount(analysis, range) is var n and > 1 ? $"{n} cp" : null;
+                var gap = labelSize * 0.4;
+                Size countSize = default;
+
+                if (count is not null)
+                {
+                    using var probe = Draw.Layout(count, labelSize, p.Foreground);
+                    countSize = new Size(probe.WidthIncludingTrailingWhitespace, probe.Height);
+                }
+
+                var textWidth = layout.WidthIncludingTrailingWhitespace;
+                var fitsBoth = count is null || textWidth + gap + countSize.Width <= box.Width - 4;
+                var total = count is null ? textWidth : fitsBoth ? textWidth + gap + countSize.Width : countSize.Width;
+                var x = box.X + (box.Width - total) / 2;
+
+                if (fitsBoth && textWidth <= box.Width)
+                {
+                    layout.Draw(context, new Point(x, box.Y + (box.Height - layout.Height) / 2));
+                    x += textWidth + gap;
+                }
+
+                if (count is not null)
+                {
+                    Draw.Text(context, count, x, box.Y + (box.Height - countSize.Height) / 2, labelSize, p.Foreground);
+                }
+            }
+        }
+
         private void DrawClusterGlyphs(DrawingContext context, TextAnalysis analysis, IReadOnlyList<GlyphBox> glyphs,
             Rect box, double size)
         {
@@ -220,7 +271,7 @@ namespace TextTour.Chapters
                     var box = new Rect(x, top, LabelWidth - 12, height);
                     Draw.TextIn(context, name, box, size, p.Muted, align: HAlign.Left, padding: 0);
 
-                    if (counts > 0 && stripe.Index == 0)
+                    if (counts > 0)
                     {
                         using (context.PushOpacity(counts))
                         {
@@ -230,10 +281,12 @@ namespace TextTour.Chapters
                 }
             }
 
-            Label(0, 1, "UTF-16 units", analysis.Text.Length, model.RowHeight);
-            Label(1, 2, "code points", analysis.Codepoints.Count, model.RowHeight);
-            Label(2, 3, "graphemes", analysis.Graphemes.Count, model.RowHeight);
-            Label(3, 4, "glyphs", analysis.Glyphs.Count, model.GlyphRowHeight);
+            // Each stripe counts its own units, so the numbers beside it match the cells beside them.
+            var c = model.Counts[stripe.Index];
+            Label(0, 1, "UTF-16 units", c.Units, model.RowHeight);
+            Label(1, 2, "code points", c.Codepoints, model.RowHeight);
+            Label(2, 3, "graphemes", c.Graphemes, model.RowHeight);
+            Label(3, 4, "glyphs", c.Glyphs, model.GlyphRowHeight);
         }
 
         private void DrawSummary(DrawingContext context, Model model, TextAnalysis analysis)
@@ -247,11 +300,14 @@ namespace TextTour.Chapters
 
             using (context.PushOpacity(reveal))
             {
+                // The whole string, set apart from the stripes by a rule: the stripes count their own part.
                 var p = Palette;
-                var y = model.Grid.Bottom + model.Unit * 0.5;
+                var rule = model.Grid.Bottom + model.Unit * 0.3;
+                var y = rule + model.Unit * 0.25;
                 var size = Math.Clamp(model.Unit * 0.5, 18, 28);
-                var line = $"string.Length {analysis.Text.Length}    code points {analysis.Codepoints.Count}    " +
-                           $"graphemes {analysis.Graphemes.Count}    glyphs {analysis.Glyphs.Count}";
+                context.DrawLine(new Pen(p.Grid, 1), new Point(Pad, rule), new Point(Bounds.Width - Pad, rule));
+                var line = $"whole string: {analysis.Text.Length} UTF-16 units, {analysis.Codepoints.Count} code points, " +
+                           $"{analysis.Graphemes.Count} graphemes, {analysis.Glyphs.Count} glyphs";
                 Draw.Text(context, line, Pad, y, size, p.Foreground, typeface: Draw.UiBold,
                     maxWidth: Bounds.Width - 2 * Pad);
             }
@@ -338,12 +394,7 @@ namespace TextTour.Chapters
                 return existing;
             }
 
-            foreach (var layout in _graphemeLayouts)
-            {
-                layout.Dispose();
-            }
-
-            _graphemeLayouts.Clear();
+            DisposeLayouts();
 
             var analysis = State.Analysis;
             var width = Math.Max(200, Bounds.Width - 2 * Pad - LabelWidth);
@@ -378,6 +429,13 @@ namespace TextTour.Chapters
                 _graphemeLayouts.Add(analysis.CreateLayout(Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95),
                     double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
                     text: analysis.Text.Substring(g.Start, g.Length), foreground: Palette.Foreground));
+
+                // A white-space grapheme draws as an open box, so its cell does not look empty.
+                var blank = string.IsNullOrWhiteSpace(analysis.Text.Substring(g.Start, g.Length));
+                _graphemeCellLayouts.Add(analysis.CreateLayout(Math.Min(model.RowHeight * 0.55, 22),
+                    double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
+                    text: blank ? "\u2423" : analysis.Text.Substring(g.Start, g.Length),
+                    foreground: blank ? Palette.Muted : Palette.Foreground));
             }
 
             return _model = model!;
@@ -386,13 +444,23 @@ namespace TextTour.Chapters
         public override void Dispose()
         {
             _glyphs.Dispose();
+            DisposeLayouts();
+        }
 
+        private void DisposeLayouts()
+        {
             foreach (var layout in _graphemeLayouts)
             {
                 layout.Dispose();
             }
 
+            foreach (var layout in _graphemeCellLayouts)
+            {
+                layout.Dispose();
+            }
+
             _graphemeLayouts.Clear();
+            _graphemeCellLayouts.Clear();
         }
 
         /// <summary>Row geometry of the units table for one unit size.</summary>
@@ -411,6 +479,7 @@ namespace TextTour.Chapters
                 var stripeHeight = CharHeight + Gap + 3 * (RowHeight + Gap) + GlyphRowHeight;
                 Grid = new LogicalGrid(analysis, left, top, width, cell, stripeHeight, unit * 0.55, unit * 1.5);
                 Clusters = analysis.Clusters();
+                Counts = CountPerStripe(analysis, Grid, Clusters);
             }
 
             public double Unit { get; }
@@ -427,11 +496,33 @@ namespace TextTour.Chapters
 
             public IReadOnlyList<(TextRange Range, IReadOnlyList<GlyphBox> Glyphs)> Clusters { get; }
 
+            /// <summary>The units of each stripe; a glyph cluster counts in the stripe of its first char.</summary>
+            public IReadOnlyList<StripeCounts> Counts { get; }
+
             /// <summary>The bottom of the code point row, relative to the stripe top.</summary>
             public double CodepointRowBottom => RowTop(1) + RowHeight;
 
             /// <summary>The top of table row <paramref name="row"/> (0 = code units), relative to the stripe top.</summary>
             public double RowTop(int row) => CharHeight + Gap + row * (RowHeight + Gap);
+
+            private static StripeCounts[] CountPerStripe(TextAnalysis analysis, LogicalGrid grid,
+                IReadOnlyList<(TextRange Range, IReadOnlyList<GlyphBox> Glyphs)> clusters)
+            {
+                var counts = new StripeCounts[grid.Stripes.Count];
+
+                for (var i = 0; i < counts.Length; i++)
+                {
+                    var range = grid.Stripes[i].Range;
+                    counts[i] = new StripeCounts(range.Length,
+                        analysis.Codepoints.Count(c => range.Contains(c.Offset)),
+                        analysis.Graphemes.Count(g => range.Contains(g.Start)),
+                        clusters.Where(c => grid.StripeOf(c.Range.Start) == grid.Stripes[i]).Sum(c => c.Glyphs.Count));
+                }
+
+                return counts;
+            }
         }
+
+        private readonly record struct StripeCounts(int Units, int Codepoints, int Graphemes, int Glyphs);
     }
 }
