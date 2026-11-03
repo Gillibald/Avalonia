@@ -455,6 +455,15 @@ namespace TextTour
             b.AppendLine($"source runs: {string.Join(" ", SourceRuns.Select(r => $"{r.Range.Start}+{r.Range.Length}{(r.IsStyled ? "*" : "")}"))}");
             b.AppendLine($"line runs in TextLine.TextRuns order (start): {string.Join(" ", LineRunOrder)}");
 
+            foreach (var info in Codepoints)
+            {
+                var cp = info.Codepoint;
+                b.AppendLine($"code point U+{cp.Value:X4} at {info.Offset}+{info.Length}: {cp.GeneralCategory}, script {cp.Script}, " +
+                             $"BiDi {cp.BiDiClass}, line break {cp.LineBreakClass}, grapheme break {cp.GraphemeBreakClass}, " +
+                             $"word break {cp.WordBreakClass}, East Asian width {cp.EastAsianWidthClass}, " +
+                             $"emoji {(cp.IsEmoji ? cp.HasEmojiPresentation ? "emoji presentation" : "text presentation" : "no")}");
+            }
+
             foreach (var item in Items)
             {
                 b.AppendLine($"item {item.Index}: {item.Range.Start}+{item.Range.Length} level {item.BidiLevel} {item.Script} " +
