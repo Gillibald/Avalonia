@@ -46,6 +46,7 @@ namespace TextTour.Chapters
         private bool _syncing;
         private bool _exporting;
         private CultureInfo? _exportCulture;
+        private string _exportFamily = TourState.DefaultFamilyList;
         private Model? _model;
 
         public FontsChapter(TourState state) : base(state)
@@ -142,14 +143,16 @@ namespace TextTour.Chapters
 
         public override void PrepareExport(int step, int variant)
         {
-            // Variants without a culture of their own keep the culture the export started with.
+            // Variants without a culture or family of their own keep the ones the export started
+            // with, so --family reaches this chapter like every other.
             if (!_exporting)
             {
                 _exporting = true;
                 _exportCulture = State.Culture;
+                _exportFamily = State.FamilyList;
             }
 
-            var defaultFamily = TourState.DefaultFamilyList;
+            var defaultFamily = _exportFamily;
             var bold = SystemFamilies.FirstOf("Avenir Next", "Segoe UI", "Arial") ?? defaultFamily;
             var cjk = SystemFamilies.FirstOf("PingFang SC", "Microsoft YaHei", "Yu Gothic UI", "Hiragino Sans") ?? defaultFamily;
 
