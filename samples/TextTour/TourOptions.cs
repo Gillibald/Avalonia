@@ -14,6 +14,7 @@ namespace TextTour
             "  --theme light|dark     theme (default light)\n" +
             "  --preset <name>        preset name or its first word (default: Running example)\n" +
             "  --scale <percent>      content scale, 75 to 200 (default 100)\n" +
+            "  --density 1|2          pixels per point of the exported PNG files (default 1)\n" +
             "  --family <list>        the family list the chapters show, as typed in the Fonts chapter\n" +
             "  --help                 show this text\n";
 
@@ -28,6 +29,9 @@ namespace TextTour
         public Preset Preset { get; private set; } = Preset.RunningExample;
 
         public double Scale { get; private set; } = 1;
+
+        /// <summary>Pixels per point of exported frames: the layout stays the same, only sharper.</summary>
+        public int Density { get; private set; } = 1;
 
         public CultureInfo? Culture { get; private set; }
 
@@ -80,6 +84,14 @@ namespace TextTour
                         break;
                     case "--scale":
                         options.Scale = double.Parse(Next(), CultureInfo.InvariantCulture) / 100;
+                        break;
+                    case "--density":
+                        options.Density = Next() switch
+                        {
+                            "1" => 1,
+                            "2" => 2,
+                            var other => throw new ArgumentException($"--density expects 1 or 2, not '{other}'."),
+                        };
                         break;
                     case "--family":
                         options.Family = Next();

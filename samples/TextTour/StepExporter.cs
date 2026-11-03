@@ -15,7 +15,8 @@ namespace TextTour
     /// <summary>
     /// Renders every chapter and step to PNG without a visible window: the shell is hosted at the
     /// requested size inside a small offscreen window (so styles, fonts and the platform font
-    /// manager are the live ones) and captured with <see cref="RenderTargetBitmap"/> at 96 dpi.
+    /// manager are the live ones) and captured with <see cref="RenderTargetBitmap"/> at 96 dpi
+    /// times the export density.
     /// </summary>
     internal sealed class StepExporter
     {
@@ -70,7 +71,7 @@ namespace TextTour
                 log.AppendLine("TextTour step export");
                 log.AppendLine($"renderer: {Renderer()}");
                 log.AppendLine($"platform: {RuntimeInformation.OSDescription}");
-                log.AppendLine($"size: {_options.Width}x{_options.Height} points at 1x, theme {(_options.Dark ? "dark" : "light")}, " +
+                log.AppendLine($"size: {_options.Width}x{_options.Height} points at {_options.Density}x, theme {(_options.Dark ? "dark" : "light")}, " +
                                $"content scale {_options.Scale * 100:0} %, preset '{_options.Preset.Name}'");
                 log.AppendLine();
 
@@ -141,7 +142,9 @@ namespace TextTour
         {
             view.UpdateLayout();
 
-            using var bitmap = new RenderTargetBitmap(new PixelSize(_options.Width, _options.Height), new Vector(96, 96));
+            var density = _options.Density;
+            using var bitmap = new RenderTargetBitmap(new PixelSize(_options.Width * density, _options.Height * density),
+                new Vector(96 * density, 96 * density));
             bitmap.Render(view);
             bitmap.Save(path, PngBitmapEncoderOptions.Default);
         }
