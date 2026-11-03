@@ -68,102 +68,148 @@ namespace TextShowcase.Scenes
 
             var last = -1.0;
             var versions = Array.Empty<int>();
+            var drawn = Array.Empty<double>();
+            var atlasPages = Array.Empty<GlyphAtlasPage>();
 
             context.OnTick(time =>
             {
-                if (Math.Abs(time - last) < 0.5 && last >= 0)
+                if (last < 0 || Math.Abs(time - last) >= 0.5)
                 {
-                    return;
-                }
+                    last = time;
 
-                last = time;
+                    var atlas = Array.Find(GlyphRasterizationContext.Required.Budget.GetSharedAtlases(),
+                        candidate => candidate.Format == GlyphAtlasFormat.Alpha8 && candidate.GetPages().Length > 0);
+                    atlasPages = atlas?.GetPages() ?? Array.Empty<GlyphAtlasPage>();
 
-                var atlas = Array.Find(GlyphRasterizationContext.Required.Budget.GetSharedAtlases(),
-                    candidate => candidate.Format == GlyphAtlasFormat.Alpha8 && candidate.GetPages().Length > 0);
-                var atlasPages = atlas?.GetPages() ?? Array.Empty<GlyphAtlasPage>();
+                    status.Text = atlas is null
+                        ? "No shared atlas pages: this context composes glyphs without a GPU atlas (CPU raster, or a GPU API that cannot update pages in place)."
+                        : FormattableString.Invariant(
+                            $"{atlasPages.Length} page(s), {atlas.AllocatedBytes / 1048576.0:0.0} MB, {atlas.Count} entries. Coverage is stored gamma-corrected per luminance bucket; the backend only samples it.");
 
-                status.Text = atlas is null
-                    ? "No shared atlas pages: this context composes glyphs without a GPU atlas (CPU raster, or a GPU API that cannot update pages in place)."
-                    : FormattableString.Invariant(
-                        $"{atlasPages.Length} page(s), {atlas.AllocatedBytes / 1048576.0:0.0} MB, {atlas.Count} entries. Coverage is stored gamma-corrected per luminance bucket; the backend only samples it.");
-
-                if (atlasPages.Length != versions.Length)
-                {
-                    pages.Children.Clear();
-                    versions = new int[atlasPages.Length];
-
-                    for (var i = 0; i < atlasPages.Length; i++)
+                    if (atlasPages.Length != versions.Length)
                     {
-                        versions[i] = -1;
-                        pages.Children.Add(new Border
+                        pages.Children.Clear();
+                        versions = new int[atlasPages.Length];
+                        drawn = new double[atlasPages.Length];
+
+                        for (var i = 0; i < atlasPages.Length; i++)
                         {
-                            BorderBrush = Ui.Hairline,
-                            BorderThickness = new Thickness(1),
-                            Margin = new Thickness(0, 8, 12, 0),
-                            Child = new Image { Width = 400, Stretch = Stretch.Uniform },
-                        });
+                            versions[i] = -1;
+                            drawn[i] = double.NegativeInfinity;
+                            pages.Children.Add(new Border
+                            {
+                                BorderBrush = Ui.Hairline,
+                                BorderThickness = new Thickness(1),
+                                Margin = new Thickness(0, 8, 12, 0),
+                                Child = new Image { Width = 400, Stretch = Stretch.Uniform },
+                            });
+                        }
                     }
                 }
 
+                // At most one page per frame, and each page at most twice a second: a redraw runs on
+                // the UI thread, and several in one frame would delay it past the next vsync.
                 for (var i = 0; i < atlasPages.Length; i++)
                 {
                     var page = atlasPages[i];
 
-                    if (page.Version == versions[i])
+                    if (page.Version == versions[i] || Math.Abs(time - drawn[i]) < 0.5 ||
+                        pages.Children[i] is not Border { Child: Image image })
                     {
                         continue;
                     }
 
                     versions[i] = page.Version;
+                    drawn[i] = time;
 
-                    if (pages.Children[i] is Border { Child: Image image })
+                    var height = Math.Max(1, Math.Min(page.UsedHeight, page.Height));
+
+                    // The page's bitmap is redrawn in place; a new one only when the used rows grow.
+                    if (image.Source is not WriteableBitmap bitmap || bitmap.PixelSize.Height != height)
                     {
                         var previous = image.Source as IDisposable;
-                        image.Source = ToBitmap(page);
+                        bitmap = new WriteableBitmap(new PixelSize(GlyphMaskAtlas.PageWidth, height),
+                            new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+                        Draw(page, bitmap);
+                        image.Source = bitmap;
                         previous?.Dispose();
                     }
+                    else
+                    {
+                        Draw(page, bitmap);
+                        image.InvalidateVisual();
+                    }
+
+                    break;
                 }
             });
 
             return root;
         }
 
+        private const uint Ink = 0xFF000000;
+        private const uint Paper = 0xFFFFFFFF;
+
         /// <summary>
-        /// The used rows of a page as dark ink on white, so it reads on a projector. A page that
-        /// lives only in a GPU texture shows where it holds ink.
+        /// Draws the used rows of a page as dark ink on white, so it reads on a projector. A page
+        /// that lives only in a GPU texture shows where it holds ink. A changed page is redrawn on
+        /// the UI thread up to twice a second, so rows and runs without ink are filled in one call
+        /// instead of texel by texel.
         /// </summary>
-        private static WriteableBitmap ToBitmap(GlyphAtlasPage page)
+        private static void Draw(GlyphAtlasPage page, WriteableBitmap bitmap)
         {
+            const int Run = 64;
             var width = GlyphMaskAtlas.PageWidth;
-            var height = Math.Max(1, Math.Min(page.UsedHeight, page.Height));
-            var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96),
-                PixelFormat.Bgra8888, AlphaFormat.Premul);
             var source = page.Pixels;
 
             using var locked = bitmap.Lock();
+            var height = locked.Size.Height;
 
             unsafe
             {
                 for (var y = 0; y < height; y++)
                 {
-                    var row = (byte*)locked.Address + y * locked.RowBytes;
+                    var row = new Span<uint>((byte*)locked.Address + y * locked.RowBytes, width);
+
+                    if (source is null)
+                    {
+                        // A resident page answers where it holds ink, 64 texels per read.
+                        for (var x = 0; x < width; x += Run)
+                        {
+                            var bits = page.ReadInk(x, y, Run);
+                            var run = row.Slice(x, Run);
+
+                            if (bits == 0)
+                            {
+                                run.Fill(Paper);
+                                continue;
+                            }
+
+                            for (var i = 0; i < Run; i++)
+                            {
+                                run[i] = ((bits >> i) & 1) != 0 ? Ink : Paper;
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    var start = y * width;
+                    var coverage = start + width <= source.Length ? source.AsSpan(start, width) : ReadOnlySpan<byte>.Empty;
+
+                    if (coverage.IsEmpty || coverage.IndexOfAnyExcept((byte)0) < 0)
+                    {
+                        row.Fill(Paper);
+                        continue;
+                    }
 
                     for (var x = 0; x < width; x++)
                     {
-                        var index = y * width + x;
-                        var value = source is null
-                            ? (byte)((page.ReadInk(x, y, 1) & 1) != 0 ? 0 : 255)
-                            : (byte)(255 - (index < source.Length ? source[index] : 0));
-                        var px = row + x * 4;
-                        px[0] = value;
-                        px[1] = value;
-                        px[2] = value;
-                        px[3] = 255;
+                        var value = (uint)(255 - coverage[x]);
+                        row[x] = 0xFF000000 | value << 16 | value << 8 | value;
                     }
                 }
             }
-
-            return bitmap;
         }
     }
 }
