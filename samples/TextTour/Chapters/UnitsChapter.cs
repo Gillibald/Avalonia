@@ -34,7 +34,7 @@ namespace TextTour.Chapters
 
         public override string StepName => Step switch
         {
-            1 => "UTF-16 code units",
+            1 => "chars (UTF-16)",
             2 => "code points",
             3 => "grapheme clusters",
             4 => "glyphs",
@@ -283,7 +283,7 @@ namespace TextTour.Chapters
 
             // Each stripe counts its own units, so the numbers beside it match the cells beside them.
             var c = model.Counts[stripe.Index];
-            Label(0, 1, "UTF-16 units", c.Units, model.RowHeight);
+            Label(0, 1, "chars", c.Units, model.RowHeight);
             Label(1, 2, "code points", c.Codepoints, model.RowHeight);
             Label(2, 3, "graphemes", c.Graphemes, model.RowHeight);
             Label(3, 4, "glyphs", c.Glyphs, model.GlyphRowHeight);
@@ -306,7 +306,7 @@ namespace TextTour.Chapters
                 var y = rule + model.Unit * 0.25;
                 var size = Math.Clamp(model.Unit * 0.5, 18, 28);
                 context.DrawLine(new Pen(p.Grid, 1), new Point(Pad, rule), new Point(Bounds.Width - Pad, rule));
-                var line = $"whole string: {analysis.Text.Length} UTF-16 units, {analysis.Codepoints.Count} code points, " +
+                var line = $"whole string: {analysis.Text.Length} chars, {analysis.Codepoints.Count} code points, " +
                            $"{analysis.Graphemes.Count} graphemes, {analysis.Glyphs.Count} glyphs";
                 Draw.Text(context, line, Pad, y, size, p.Foreground, typeface: Draw.UiBold,
                     maxWidth: Bounds.Width - 2 * Pad);
