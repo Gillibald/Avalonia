@@ -17,9 +17,11 @@ namespace TextTour.Chapters
     internal sealed class UnitsChapter : Chapter
     {
         private const double LabelWidth = 210;
+        private const int GlyphStep = 4;
 
         private readonly GlyphPainter _glyphs = new();
-        private readonly List<TextLayout> _graphemeLayouts = new();
+        private readonly List<(TextRange Range, TextLayout Layout)> _partLayouts = new();
+        private readonly List<(TextRange Range, TextLayout Layout)> _shapedLayouts = new();
         private readonly List<TextLayout> _graphemeCellLayouts = new();
         private Model? _model;
         private int _hoverCodepoint = -1;
@@ -121,18 +123,14 @@ namespace TextTour.Chapters
                 DrawRowLabels(context, model, stripe, labelSize);
             }
 
-            // Characters in logical order: each grapheme drawn on its own over the cells it spans.
-            for (var g = 0; g < analysis.Graphemes.Count; g++)
+            // The text in logical order over the cells it spans. Until the glyph row appears every code
+            // point is drawn on its own, so nothing is shaped yet; from then on each item is drawn whole.
+            foreach (var (range, layout) in Step >= GlyphStep ? _shapedLayouts : _partLayouts)
             {
-                var range = analysis.Graphemes[g];
-
-                foreach (var (stripe, x0, x1) in grid.Spans(range))
-                {
-                    var box = new Rect(x0, stripe.Top, x1 - x0, model.CharHeight);
-                    var layout = _graphemeLayouts[g];
-                    layout.Draw(context, new Point(box.X + (box.Width - layout.WidthIncludingTrailingWhitespace) / 2,
-                        box.Y + (box.Height - layout.Height) / 2));
-                }
+                var (stripe, x0, x1) = grid.Spans(range).First();
+                var box = new Rect(x0, stripe.Top, x1 - x0, model.CharHeight);
+                layout.Draw(context, new Point(box.X + (box.Width - layout.WidthIncludingTrailingWhitespace) / 2,
+                    box.Y + (box.Height - layout.Height) / 2));
             }
 
             // Row 1: one cell per char with its hex value.
@@ -424,12 +422,23 @@ namespace TextTour.Chapters
                 model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, chosenCell, stretch);
             }
 
+            var size = Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95);
+
+            foreach (var info in analysis.Codepoints)
+            {
+                _partLayouts.Add((info.Range, TextLayoutFor(analysis, info.Range, size)));
+            }
+
+            foreach (var item in analysis.Items)
+            {
+                foreach (var piece in PiecesPerStripe(analysis, model.Grid, item.Range))
+                {
+                    _shapedLayouts.Add((piece, FittedLayout(analysis, model.Grid, piece, size)));
+                }
+            }
+
             foreach (var g in analysis.Graphemes)
             {
-                _graphemeLayouts.Add(analysis.CreateLayout(Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95),
-                    double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
-                    text: analysis.Text.Substring(g.Start, g.Length), foreground: Palette.Foreground));
-
                 // A white-space grapheme draws as an open box, so its cell does not look empty.
                 var blank = string.IsNullOrWhiteSpace(analysis.Text.Substring(g.Start, g.Length));
                 _graphemeCellLayouts.Add(analysis.CreateLayout(Math.Min(model.RowHeight * 0.55, 22),
@@ -441,6 +450,53 @@ namespace TextTour.Chapters
             return _model = model!;
         }
 
+        private TextLayout TextLayoutFor(TextAnalysis analysis, TextRange range, double size) =>
+            analysis.CreateLayout(size, double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
+                text: analysis.Text.Substring(range.Start, range.Length), foreground: Palette.Foreground);
+
+        // Shaped text can be wider than its cells, which only have room for the widest single part.
+        private TextLayout FittedLayout(TextAnalysis analysis, LogicalGrid grid, TextRange range, double size)
+        {
+            var layout = TextLayoutFor(analysis, range, size);
+            var (_, x0, x1) = grid.Spans(range).First();
+            var width = layout.WidthIncludingTrailingWhitespace;
+
+            if (width <= x1 - x0)
+            {
+                return layout;
+            }
+
+            layout.Dispose();
+            return TextLayoutFor(analysis, range, size * (x1 - x0) / width);
+        }
+
+        // An item that crosses a stripe boundary is drawn once per stripe, cut between graphemes.
+        private static IEnumerable<TextRange> PiecesPerStripe(TextAnalysis analysis, LogicalGrid grid, TextRange item)
+        {
+            var start = item.Start;
+            Stripe? current = null;
+            var end = item.Start;
+
+            foreach (var g in analysis.Graphemes.Where(g => g.Start >= item.Start && g.Start < item.Start + item.Length))
+            {
+                var stripe = grid.Spans(g).First().Stripe;
+
+                if (current is not null && stripe != current)
+                {
+                    yield return new TextRange(start, end - start);
+                    start = g.Start;
+                }
+
+                current = stripe;
+                end = g.Start + g.Length;
+            }
+
+            if (end > start)
+            {
+                yield return new TextRange(start, end - start);
+            }
+        }
+
         public override void Dispose()
         {
             _glyphs.Dispose();
@@ -449,7 +505,7 @@ namespace TextTour.Chapters
 
         private void DisposeLayouts()
         {
-            foreach (var layout in _graphemeLayouts)
+            foreach (var (_, layout) in _partLayouts.Concat(_shapedLayouts))
             {
                 layout.Dispose();
             }
@@ -459,7 +515,8 @@ namespace TextTour.Chapters
                 layout.Dispose();
             }
 
-            _graphemeLayouts.Clear();
+            _partLayouts.Clear();
+            _shapedLayouts.Clear();
             _graphemeCellLayouts.Clear();
         }
 
