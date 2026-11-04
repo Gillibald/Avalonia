@@ -1112,7 +1112,15 @@ namespace TextTour.Chapters
             {
                 RenderMetrics(ctx, layout, origin, false);
                 var line = layout.TextLines[0];
-                Draw.Text(ctx, $"line height {line.Height:0.#}, baseline {line.Baseline:0.#}", origin.X,
+                var x = origin.X + line.WidthIncludingTrailingWhitespace + 36;
+                var top = origin.Y;
+                var bottom = origin.Y + line.Height;
+                var pen = Draw.Pen(p.Accent, 3);
+                context.DrawLine(pen, new Point(x, top), new Point(x, bottom));
+                context.DrawLine(pen, new Point(x - 10, top), new Point(x + 10, top));
+                context.DrawLine(pen, new Point(x - 10, bottom), new Point(x + 10, bottom));
+                Draw.Text(ctx, $"line height {line.Height:0.#}", x + 18, (top + bottom) / 2 - 14, 24, p.Accent, typeface: Draw.UiBold);
+                Draw.Text(ctx, $"font size {FontSize:0}, baseline {line.Baseline:0.#}", origin.X,
                     origin.Y + layout.Height + 16, 20, p.Foreground);
             }
         }
