@@ -22,6 +22,7 @@ namespace TextTour.Chapters
 
         // Height of the strip above each line in the run order step that holds the direction arrows.
         private const double ArrowStrip = 26;
+        private const double MinIndexedRunWidth = 30;
 
         // The reading-order band under each line: the stop row, jump lanes above and below it, and
         // the numbered labels on the stops.
@@ -975,7 +976,14 @@ namespace TextTour.Chapters
                         Draw.Pen(level == 0 ? p.Grid : p.Series(level + 2), 1.5), box.Deflate(new Thickness(1, 2)), 4, 4);
                     arrows.Add((new Rect(box.X + 1, box.Y + 3, box.Width - 2, ArrowStrip - 2), level % 2 == 1));
                     run.Draw(context, new Point(rx, _origin.Y + top + TextLineImpl.GetBaselineOffset(line, run)));
-                    Draw.Text(context, $"{start}", rx + 4, box.Bottom - 20, 14, p.Muted);
+
+                    // A space run is too narrow for its index, which would run into the next run's.
+                    if (run.Size.Width >= MinIndexedRunWidth)
+                    {
+                        Draw.Text(context, $"{start}", rx + 4, box.Bottom - 20, 14, p.Muted);
+                    }
+
+                    Draw.Text(context, $"{level}", rx + run.Size.Width / 2 - 5, box.Top - 24, 18, p.Foreground, typeface: Draw.UiBold);
                 }
             }
 
