@@ -18,9 +18,11 @@ namespace TextTour.Chapters
     internal sealed class TokensChapter : Chapter
     {
         private const double LabelWidth = 170;
+        private const int GlyphStep = 7;
 
         private readonly GlyphPainter _glyphs = new();
         private readonly List<TextLayout> _graphemeLayouts = new();
+        private readonly List<(TextRange Range, TextLayout Layout)> _shapedLayouts = new();
         private Model? _model;
         private int _hoverGlyph = -1;
 
@@ -125,14 +127,27 @@ namespace TextTour.Chapters
                 DrawLabels(context, model, stripe, labelSize);
             }
 
-            // Characters in logical order; the styled span of the text source keeps its own brush.
-            for (var g = 0; g < analysis.Graphemes.Count; g++)
+            // The text in logical order; the styled span of the text source keeps its own brush. It is
+            // shaped, except on the glyph step, whose lines end at the single graphemes.
+            if (Step < GlyphStep)
             {
-                foreach (var (stripe, x0, x1) in grid.Spans(analysis.Graphemes[g]))
+                foreach (var (range, layout) in _shapedLayouts)
                 {
-                    var layout = _graphemeLayouts[g];
+                    var (stripe, x0, x1) = grid.Spans(range).First();
                     layout.Draw(context, new Point((x0 + x1 - layout.WidthIncludingTrailingWhitespace) / 2,
                         stripe.Top + model.CharTop + (model.CharHeight - layout.Height) / 2));
+                }
+            }
+            else
+            {
+                for (var g = 0; g < analysis.Graphemes.Count; g++)
+                {
+                    foreach (var (stripe, x0, x1) in grid.Spans(analysis.Graphemes[g]))
+                    {
+                        var layout = _graphemeLayouts[g];
+                        layout.Draw(context, new Point((x0 + x1 - layout.WidthIncludingTrailingWhitespace) / 2,
+                            stripe.Top + model.CharTop + (model.CharHeight - layout.Height) / 2));
+                    }
                 }
             }
 
@@ -433,12 +448,13 @@ namespace TextTour.Chapters
                 return existing;
             }
 
-            foreach (var layout in _graphemeLayouts)
+            foreach (var layout in _graphemeLayouts.Concat(_shapedLayouts.Select(s => s.Layout)))
             {
                 layout.Dispose();
             }
 
             _graphemeLayouts.Clear();
+            _shapedLayouts.Clear();
 
             var analysis = State.Analysis;
             var width = Math.Max(200, Bounds.Width - 2 * Pad - LabelWidth);
@@ -466,14 +482,18 @@ namespace TextTour.Chapters
             }
 
             var span = State.StyleSpan;
+            var size = Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95);
+
+            IBrush BrushAt(int index) =>
+                span is { } s && index >= s.Start && index < s.Start + s.Length ? Palette.Series(1) : Palette.Foreground;
 
             foreach (var g in analysis.Graphemes)
             {
-                var styled = span is { } s && g.Start >= s.Start && g.Start < s.Start + s.Length;
-                _graphemeLayouts.Add(analysis.CreateLayout(Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95),
-                    double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
-                    text: analysis.Text.Substring(g.Start, g.Length), foreground: styled ? Palette.Series(1) : Palette.Foreground));
+                _graphemeLayouts.Add(analysis.CreateLayout(size, double.PositiveInfinity, TextWrapping.NoWrap,
+                    typeface: State.Typeface, text: analysis.Text.Substring(g.Start, g.Length), foreground: BrushAt(g.Start)));
             }
+
+            _shapedLayouts.AddRange(ShapedPieces.Create(analysis, model.Grid, State.Typeface, size, r => BrushAt(r.Start)));
 
             model!.PlaceGlyphs(analysis);
 
@@ -484,12 +504,13 @@ namespace TextTour.Chapters
         {
             _glyphs.Dispose();
 
-            foreach (var layout in _graphemeLayouts)
+            foreach (var layout in _graphemeLayouts.Concat(_shapedLayouts.Select(s => s.Layout)))
             {
                 layout.Dispose();
             }
 
             _graphemeLayouts.Clear();
+            _shapedLayouts.Clear();
         }
 
         /// <summary>Row geometry of the layer stack for one unit size.</summary>

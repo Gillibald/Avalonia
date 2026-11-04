@@ -429,13 +429,7 @@ namespace TextTour.Chapters
                 _partLayouts.Add((info.Range, TextLayoutFor(analysis, info.Range, size)));
             }
 
-            foreach (var item in analysis.Items)
-            {
-                foreach (var piece in PiecesPerStripe(analysis, model.Grid, item.Range))
-                {
-                    _shapedLayouts.Add((piece, FittedLayout(analysis, model.Grid, piece, size)));
-                }
-            }
+            _shapedLayouts.AddRange(ShapedPieces.Create(analysis, model.Grid, State.Typeface, size, _ => Palette.Foreground));
 
             foreach (var g in analysis.Graphemes)
             {
@@ -453,49 +447,6 @@ namespace TextTour.Chapters
         private TextLayout TextLayoutFor(TextAnalysis analysis, TextRange range, double size) =>
             analysis.CreateLayout(size, double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
                 text: analysis.Text.Substring(range.Start, range.Length), foreground: Palette.Foreground);
-
-        // Shaped text can be wider than its cells, which only have room for the widest single part.
-        private TextLayout FittedLayout(TextAnalysis analysis, LogicalGrid grid, TextRange range, double size)
-        {
-            var layout = TextLayoutFor(analysis, range, size);
-            var (_, x0, x1) = grid.Spans(range).First();
-            var width = layout.WidthIncludingTrailingWhitespace;
-
-            if (width <= x1 - x0)
-            {
-                return layout;
-            }
-
-            layout.Dispose();
-            return TextLayoutFor(analysis, range, size * (x1 - x0) / width);
-        }
-
-        // An item that crosses a stripe boundary is drawn once per stripe, cut between graphemes.
-        private static IEnumerable<TextRange> PiecesPerStripe(TextAnalysis analysis, LogicalGrid grid, TextRange item)
-        {
-            var start = item.Start;
-            Stripe? current = null;
-            var end = item.Start;
-
-            foreach (var g in analysis.Graphemes.Where(g => g.Start >= item.Start && g.Start < item.Start + item.Length))
-            {
-                var stripe = grid.Spans(g).First().Stripe;
-
-                if (current is not null && stripe != current)
-                {
-                    yield return new TextRange(start, end - start);
-                    start = g.Start;
-                }
-
-                current = stripe;
-                end = g.Start + g.Length;
-            }
-
-            if (end > start)
-            {
-                yield return new TextRange(start, end - start);
-            }
-        }
 
         public override void Dispose()
         {
