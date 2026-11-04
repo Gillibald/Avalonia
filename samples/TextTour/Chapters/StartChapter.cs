@@ -78,7 +78,7 @@ namespace TextTour.Chapters
             using (context.PushOpacity(reveal))
             {
                 var p = Palette;
-                var top = Math.Max(_text.Bounds.Bottom + 40, Bounds.Height * 0.36);
+                var top = _text.Bounds.Bottom + 40;
                 Draw.Text(context, "What happens between this string and the pixels, and back to a caret?",
                     Bounds.Width / 2, top, 28, p.Foreground, HAlign.Center, Draw.UiBold, Bounds.Width - 2 * Pad);
 
@@ -101,7 +101,7 @@ namespace TextTour.Chapters
                 {
                     var box = new Rect(x + i * (width + gap), y, width, height);
                     context.DrawRectangle(p.SeriesFill(i), Draw.Pen(p.Series(i), 2.5), box, 10, 10);
-                    Draw.TextIn(context, $"{i + 2}  {s_stages[i].Name}", box.WithHeight(64).Translate(new Vector(0, 8)), 30, p.Foreground,
+                    Draw.TextIn(context, s_stages[i].Name, box.WithHeight(64).Translate(new Vector(0, 8)), 30, p.Foreground,
                         Draw.UiBold);
                     using var line = new TextLayout(s_stages[i].Line, Draw.UiTypeface, 19, p.Foreground, TextAlignment.Center,
                         TextWrapping.Wrap, maxWidth: width - 24);
