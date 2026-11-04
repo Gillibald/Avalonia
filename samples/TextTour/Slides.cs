@@ -11,7 +11,7 @@ namespace TextTour
     {
         private sealed record Entry(string Chapter, int FirstStep, int LastStep, bool Card, Slide Slide);
 
-        private static readonly Slide s_oneString = new("1.5", "One string, analysed at every stage");
+        private static readonly Slide s_oneString = new("1.6", "One string, analysed at every stage");
         private static readonly Slide s_units = new("2.1", "Four units, and none of them maps 1:1");
         private static readonly Slide s_properties = new("2.2", "Every code point carries properties");
         private static readonly Slide s_query = new("3.1", "A family name is a query, not a file");
