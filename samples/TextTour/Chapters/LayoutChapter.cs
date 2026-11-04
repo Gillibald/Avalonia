@@ -1039,7 +1039,11 @@ namespace TextTour.Chapters
                 var x0 = origin.X - 8;
                 var x1 = origin.X + Math.Max(line.WidthIncludingTrailingWhitespace, 40) + 8;
 
-                context.DrawRectangle(null, Draw.Pen(p.Grid, 1), new Rect(origin.X, y0, layout.MaxWidth < 1e6 ? layout.MaxWidth : x1 - origin.X, line.Height));
+                if (!labels)
+                {
+                    context.DrawRectangle(null, Draw.Pen(p.Grid, 1), new Rect(origin.X, y0, layout.MaxWidth < 1e6 ? layout.MaxWidth : x1 - origin.X, line.Height));
+                }
+
 
                 if (face is not null)
                 {
