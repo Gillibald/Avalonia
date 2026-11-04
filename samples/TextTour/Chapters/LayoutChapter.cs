@@ -23,6 +23,8 @@ namespace TextTour.Chapters
         // Height of the strip above each line in the run order step that holds the direction arrows.
         private const double ArrowStrip = 26;
         private const double MinIndexedRunWidth = 30;
+        private const double LevelStrip = 26;
+        private const double BreakLabelRise = 18;
 
         // The reading-order band under each line: the stop row, jump lanes above and below it, and
         // the numbered labels on the stops.
@@ -39,10 +41,12 @@ namespace TextTour.Chapters
         // How far a jump leaving a stop starts beside the jump landing on it.
         private const double PortOffset = 5;
 
-        private static readonly (bool Path, double Mix, string Name)[] s_orderVariants =
+        private static readonly (bool Path, double Mix, string Name, bool Narrow, bool Breaks)[] s_orderVariants =
         {
-            (false, 0, "-logical"), (false, 1, "-visual"), (true, 0, "-logical-path"), (true, 1, "-visual-path"),
-            (true, 0.5, "-midway-path"),
+            (false, 0, "-logical", false, false), (false, 1, "-visual", false, false),
+            (true, 0, "-logical-path", false, false), (true, 1, "-visual-path", false, false),
+            (true, 0.5, "-midway-path", false, false), (false, 1, "-visual-breaks", false, true),
+            (true, 1, "-visual-breaks-narrow", true, true),
         };
 
         // Steps 1 and 2 also export at this width, where the running example wraps; the slider's
@@ -50,6 +54,7 @@ namespace TextTour.Chapters
         private const double NarrowExportWidth = 560;
 
         private double? _widthBeforeExport;
+        private bool _showBreaks;
 
         // The paragraph direction of the wrapped string and of the samples beside it.
         private readonly FlowDirection _flowDirection = FlowDirection.LeftToRight;
@@ -160,11 +165,12 @@ namespace TextTour.Chapters
         public override void PrepareExport(int step, int variant)
         {
             var order = step == 3 ? s_orderVariants[variant] : default;
-            var narrow = step == 1 && variant >= 2 || step == 2 && variant == 1;
+            var narrow = step == 1 && variant >= 2 || step == 2 && variant == 1 || order.Narrow;
             _widthBeforeExport ??= State.WrapFraction;
             State.WrapFraction = narrow ? NarrowExportWidth / ContentWidth() : _widthBeforeExport.Value;
             _visualMix.To(order.Mix, false);
             _showPath = step == 1 ? variant is 1 or 3 : order.Path;
+            _showBreaks = order.Breaks;
             _hoverLine = step == 4 ? 0 : -1;
             RaiseCaptionChanged();
             InvalidateVisual();
@@ -179,6 +185,7 @@ namespace TextTour.Chapters
             }
 
             _showPath = false;
+            _showBreaks = false;
             _visualMix.To(0, false);
         }
 
@@ -890,11 +897,17 @@ namespace TextTour.Chapters
                 RenderReadingPath(context, plan, BandTops(tops));
             }
 
-            if (!breaks)
+            if (breaks)
             {
-                return;
+                RenderBreakTicks(context, tops, BreakLabelRise);
             }
+        }
 
+        // The ticks mark the opportunities on each line, the heavy one the break the formatter chose.
+        private void RenderBreakTicks(DrawingContext context, IReadOnlyList<double> tops, double labelRise)
+        {
+            var p = Palette;
+            var layout = _layout!;
             var analysis = State.Analysis;
 
             for (var l = 0; l < layout.TextLines.Count; l++)
@@ -925,7 +938,7 @@ namespace TextTour.Chapters
 
                     if (chosen)
                     {
-                        Draw.Text(context, "break", x, _origin.Y + top - 18, 16, p.Warning, HAlign.Center, Draw.UiBold);
+                        Draw.Text(context, "break", x, _origin.Y + top - labelRise, 16, p.Warning, HAlign.Center, Draw.UiBold);
                     }
                 }
 
@@ -947,7 +960,9 @@ namespace TextTour.Chapters
             // The band keeps room for the jumps of both orders, so the lines below stay put while
             // the runs move.
             var plan = PathVisible ? PlanPath(mix, 0, 1) : null;
-            var tops = LineTops(ArrowStrip, plan?.Bands);
+
+            // The levels above each box need room between the lines once there is more than one.
+            var tops = LineTops(ArrowStrip + (layout.TextLines.Count > 1 ? LevelStrip : 0), plan?.Bands);
             var height = tops[^1] + layout.TextLines[^1].Height + (plan?.Bands[^1] ?? 0);
 
             // The direction arrows are drawn last, so nothing covers them.
@@ -995,6 +1010,11 @@ namespace TextTour.Chapters
             foreach (var (box, rightToLeft) in arrows)
             {
                 Draw.DirectionArrow(context, box, rightToLeft, p.Foreground, 44, 2.5);
+            }
+
+            if (_showBreaks)
+            {
+                RenderBreakTicks(context, tops, ArrowStrip + LevelStrip + 20);
             }
 
             Draw.Text(context, (mix < 0.5 ?
