@@ -16,6 +16,7 @@ namespace TextTour
             "  --scale <percent>      content scale, 75 to 200 (default 100)\n" +
             "  --density 1|2          pixels per point of the exported PNG files (default 1)\n" +
             "  --family <list>        the family list the chapters show, as typed in the Fonts chapter\n" +
+            "  --text <string>        the string to show instead of the preset's\n" +
             "  --help                 show this text\n";
 
         public string? ExportDirectory { get; private set; }
@@ -37,6 +38,9 @@ namespace TextTour
 
         /// <summary>The family list to start with; the platform default when not given.</summary>
         public string? Family { get; private set; }
+
+        /// <summary>The string to start with; the preset's own when not given.</summary>
+        public string? Text { get; private set; }
 
         public bool Help { get; private set; }
 
@@ -95,6 +99,9 @@ namespace TextTour
                         break;
                     case "--family":
                         options.Family = Next();
+                        break;
+                    case "--text":
+                        options.Text = Next();
                         break;
                     case "--culture":
                         options.Culture = CultureInfo.GetCultureInfo(Next());

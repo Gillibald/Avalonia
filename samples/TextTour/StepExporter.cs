@@ -47,6 +47,12 @@ namespace TextTour
                 ContentScale = _options.Scale,
                 Animate = false,
             };
+
+            if (_options.Text is { } text)
+            {
+                state.Text = text;
+            }
+
             var view = new TourView(state) { Width = _options.Width, Height = _options.Height };
             var canvas = new Canvas();
             canvas.Children.Add(view);

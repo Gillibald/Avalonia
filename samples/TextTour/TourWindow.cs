@@ -18,6 +18,12 @@ namespace TextTour
                 Culture = options.Culture,
                 FamilyList = options.Family ?? TourState.DefaultFamilyList,
             };
+
+            if (options.Text is { } text)
+            {
+                _state.Text = text;
+            }
+
             _view = new TourView(_state);
 
             Title = "Text tour";
