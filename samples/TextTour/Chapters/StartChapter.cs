@@ -1,6 +1,7 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
@@ -56,12 +57,32 @@ namespace TextTour.Chapters
 
         private void UpdateText()
         {
-            _text.Text = State.Text;
+            _text.Inlines = CreateInlines();
             _text.FontFamily = State.Typeface.FontFamily;
             _text.FontWeight = State.Weight;
             _text.FontStyle = State.Style;
             _text.FontSize = 72;
             _text.Foreground = Palette.Foreground;
+        }
+
+        /// <summary>The string with its style span's brush, the same runs the text source hands out.</summary>
+        private InlineCollection CreateInlines()
+        {
+            var text = State.Text;
+            var inlines = new InlineCollection();
+
+            if (State.StyleSpan is { } span && span.Start + span.Length <= text.Length)
+            {
+                inlines.Add(new Run(text.Substring(0, span.Start)));
+                inlines.Add(new Run(text.Substring(span.Start, span.Length)) { Foreground = Palette.Series(1) });
+                inlines.Add(new Run(text.Substring(span.Start + span.Length)));
+            }
+            else
+            {
+                inlines.Add(new Run(text));
+            }
+
+            return inlines;
         }
 
         public override void Render(DrawingContext context)
