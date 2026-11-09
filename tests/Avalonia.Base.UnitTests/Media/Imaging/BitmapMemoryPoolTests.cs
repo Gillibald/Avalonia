@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia.Platform.Internal;
 using Xunit;
 
@@ -135,6 +136,30 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             pool.Rent(4096).Dispose();
 
             Assert.Equal(0, pool.PooledBytes);
+        }
+
+        [Fact]
+        public void Fresh_Rent_Is_Zeroed()
+        {
+            // A zero ceiling frees every returned buffer, so the native heap is free to hand
+            // the dirtied block straight back to the next rent of the same size.
+            var pool = new BitmapMemoryPool(0);
+            var dirty = new byte[4096];
+
+            Array.Fill(dirty, (byte)0xCD);
+
+            for (var i = 0; i < 16; i++)
+            {
+                using (var used = pool.Rent(4096))
+                    Marshal.Copy(dirty, 0, used.Address, dirty.Length);
+
+                using var fresh = pool.Rent(4096);
+                var bytes = new byte[4096];
+
+                Marshal.Copy(fresh.Address, bytes, 0, bytes.Length);
+
+                Assert.All(bytes, b => Assert.Equal(0, b));
+            }
         }
     }
 }
