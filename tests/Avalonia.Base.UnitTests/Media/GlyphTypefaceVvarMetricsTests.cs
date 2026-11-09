@@ -7,7 +7,6 @@ using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
-using Avalonia.UnitTests;
 
 namespace Avalonia.Base.UnitTests.Media
 {
