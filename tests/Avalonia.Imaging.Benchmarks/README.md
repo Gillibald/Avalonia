@@ -37,6 +37,12 @@ Compare a run with a baseline (median changes of 10% or more by default):
 dotnet run -c Release --project tests/Avalonia.Imaging.Benchmarks -- compare baseline.json results.json --threshold 10
 ```
 
+One page from any number of runs, from any machines and hosts (a folder is searched for `*.json`; files named `windows-1.json` and `windows-2.json` form the leg `windows`, which keeps each case's best median):
+
+```bash
+dotnet run -c Release --project tests/Avalonia.Imaging.Benchmarks -- report results/ other-machine/ --out report.html
+```
+
 Browser: generating the fixtures under the WebAssembly interpreter takes minutes, so the console host writes them and the browser host loads them over HTTP, checking every hash.
 
 ```bash

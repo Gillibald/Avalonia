@@ -6,6 +6,7 @@ using Avalonia.Imaging.Benchmarks;
 // run [--quick] [--filter <text>] [--images <dir>] [--out <file.json>] [--markdown <file.md>]
 // compare <baseline.json> <current.json> [--threshold <percent>]
 // fixtures <dir> [--images <dir>]: writes the fixtures for the browser host
+// report <dir or file.json>... --out <file.html>: one page from the reports of any machines and hosts
 var command = args.FirstOrDefault() ?? "run";
 
 string? Option(string name) =>
@@ -23,6 +24,43 @@ if (command == "compare")
 
     Console.WriteLine(ReportWriter.Compare(ReportWriter.FromJson(File.ReadAllText(args[1])),
         ReportWriter.FromJson(File.ReadAllText(args[2])), threshold));
+    return 0;
+}
+
+if (command == "report")
+{
+    var htmlPath = Option("--out");
+    var inputs = args.Skip(1).TakeWhile(a => a != "--out").ToList();
+    if (htmlPath is null || inputs.Count == 0)
+    {
+        Console.Error.WriteLine("report <dir or file.json>... --out <file.html>");
+        return 2;
+    }
+
+    var reports = new System.Collections.Generic.List<(string, BenchmarkReport)>();
+    foreach (var file in inputs.SelectMany(i => Directory.Exists(i)
+                 ? Directory.EnumerateFiles(i, "*.json", SearchOption.AllDirectories)
+                 : new[] { i }))
+    {
+        // Result folders also hold other JSON, such as fixture manifests; only benchmark reports count.
+        try
+        {
+            reports.Add((HtmlReport.LegName(file), ReportWriter.FromJson(File.ReadAllText(file))));
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or FormatException)
+        {
+            Console.Error.WriteLine($"skipping {file}: not a benchmark report");
+        }
+    }
+
+    if (reports.Count == 0)
+    {
+        Console.Error.WriteLine("no benchmark reports found");
+        return 1;
+    }
+
+    File.WriteAllText(htmlPath, HtmlReport.Render(reports));
+    Console.Error.WriteLine($"{reports.Count} reports -> {htmlPath}");
     return 0;
 }
 
