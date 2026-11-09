@@ -20,6 +20,9 @@ namespace Avalonia.Imaging.Benchmarks
         public required string Runtime { get; init; }
         public required int ProcessorCount { get; init; }
         public string? Processor { get; init; }
+
+        /// <summary>How the host placed the process on the CPU, for example which cores it chose.</summary>
+        public string? Scheduling { get; init; }
         public required string SkiaSharpVersion { get; init; }
         public required string PixelManVersion { get; init; }
         public string? ImageSharpVersion { get; init; }

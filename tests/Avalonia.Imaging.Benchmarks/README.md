@@ -5,7 +5,7 @@ Compares Avalonia's SkiaSharp and PixelMan imaging backends on the same inputs, 
 | Project | What |
 | --- | --- |
 | `Avalonia.Imaging.Benchmarks.Core` | Fixtures, scenarios, runner, JSON and Markdown output, run comparison |
-| `Avalonia.Imaging.Benchmarks` | Console host (Windows, Linux) |
+| `Avalonia.Imaging.Benchmarks` | Console host (Windows, macOS, Linux) |
 | `Avalonia.Imaging.Benchmarks.Browser` | WebAssembly host (.NET 11 browser workload) |
 
 The projects restore the local PixelMan build, so run `src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath <PixelMan checkout>` first (`-Browser` for the browser host). Like the PixelMan adapter, they are not part of `Avalonia.slnx`.
@@ -17,6 +17,7 @@ The projects restore the local PixelMan build, so run `src/Imaging/PixelMan.Loca
   - Decodes use the default options with Skia's render interface bound, so both backends produce the format Skia installs: `Bgra8888` on Windows, `Rgba8888` in the browser, premultiplied, or opaque for an opaque image.
   - Encodes take the same pixels with Avalonia's encoder defaults (PNG level 6, JPEG quality 90, WebP quality 75).
 - **Same work:** after the timed runs the two decodes are compared pixel by pixel; the report shows the largest channel difference.
+- **Cores:** the console host moves itself to the fastest cores before it starts: the highest efficiency class on a hybrid Windows CPU (with power throttling off and high priority), the cores with the highest capacity or maximum frequency on Linux, the user-interactive QoS class on macOS. The report records what it did and the CPU model, and on Linux warns when the frequency governor is not `performance`.
 - **Threads:** each result has wall time and, outside the browser, process CPU time per run. CPU time above wall time means the backend used more than one thread (PixelMan's baseline JPEG decoder does).
 - **Diagnostic, not like for like:** `decode-codec` times each library's own codec API decoding to its native format, without Avalonia's pipeline. Set against `decode` it shows how much of a backend's time is the codec and how much the conversion around it.
 

@@ -29,7 +29,7 @@ namespace Avalonia.Imaging.Benchmarks
             var backends = report.Results.Select(r => r.Backend).Distinct().ToList();
             var others = backends.Where(b => b != BenchmarkBackends.Skia.Name).ToList();
 
-            text.AppendLine($"Host: {e.Host}, {e.OperatingSystem}, {e.Architecture}, {e.Runtime}, {e.ProcessorCount} logical processors{(e.Processor is null ? "" : ", " + e.Processor)}.");
+            text.AppendLine($"Host: {e.Host}, {e.OperatingSystem}, {e.Architecture}, {e.Runtime}, {e.ProcessorCount} logical processors{(e.Processor is null ? "" : ", " + e.Processor)}{(e.Scheduling is null ? "" : "; " + e.Scheduling)}.");
             text.AppendLine($"SkiaSharp {e.SkiaSharpVersion}, PixelMan {e.PixelManVersion}{(e.ImageSharpVersion is null ? "" : ", ImageSharp " + e.ImageSharpVersion)}. {e.Warmup} warm-up, {e.Iterations} timed runs, best of {e.Rounds} rounds; {e.Timestamp}.");
             text.AppendLine();
 

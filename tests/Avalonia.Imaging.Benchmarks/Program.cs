@@ -39,15 +39,20 @@ if (command == "fixtures")
     return 0;
 }
 
+var scheduling = ProcessScheduling.RequestFullSpeed();
+Console.Error.WriteLine($"Scheduling: {scheduling}");
+
 var options = (args.Contains("--quick") ? BenchmarkOptions.Quick : new BenchmarkOptions()) with
 {
     Filter = Option("--filter"),
     ImageDirectory = Option("--images"),
+    Scheduling = scheduling,
 };
 
-Console.Error.WriteLine($"Scheduling: {ProcessScheduling.RequestFullSpeed()}");
-
-var host = OperatingSystem.IsWindows() ? "console-windows" : OperatingSystem.IsLinux() ? "console-linux" : "console";
+var host = OperatingSystem.IsWindows() ? "console-windows"
+    : OperatingSystem.IsLinux() ? "console-linux"
+    : OperatingSystem.IsMacOS() ? "console-macos"
+    : "console";
 var report = new BenchmarkRunner(options, line => Console.Error.WriteLine(line)).Run(host);
 var json = ReportWriter.ToJson(report);
 var markdown = ReportWriter.ToMarkdown(report);

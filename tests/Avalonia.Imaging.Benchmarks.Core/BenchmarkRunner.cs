@@ -22,6 +22,9 @@ namespace Avalonia.Imaging.Benchmarks
         /// <summary>A directory of third-party images added to every decode scenario.</summary>
         public string? ImageDirectory { get; init; }
 
+        /// <summary>The host's note on how it scheduled the run, recorded in the report.</summary>
+        public string? Scheduling { get; init; }
+
         public static BenchmarkOptions Quick { get; } = new() { Warmup = 1, Iterations = 5, Rounds = 1 };
     }
 
@@ -257,7 +260,8 @@ namespace Avalonia.Imaging.Benchmarks
             Architecture = RuntimeInformation.ProcessArchitecture.ToString(),
             Runtime = RuntimeInformation.FrameworkDescription,
             ProcessorCount = System.Environment.ProcessorCount,
-            Processor = System.Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
+            Processor = MachineInfo.ProcessorName(),
+            Scheduling = _options.Scheduling,
             SkiaSharpVersion = Version(typeof(SkiaSharp.SKImage).Assembly),
             PixelManVersion = Version(typeof(Avalonia.PixelMan.PmBitmapFrame).Assembly),
             ImageSharpVersion = Version(typeof(SixLabors.ImageSharp.Image).Assembly),

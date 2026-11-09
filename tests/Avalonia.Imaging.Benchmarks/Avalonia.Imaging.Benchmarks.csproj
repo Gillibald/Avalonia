@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Console host of the imaging benchmarks: Windows, and Linux through a self-contained linux-x64 publish. -->
+  <!-- Console host of the imaging benchmarks: Windows, macOS and Linux. -->
   <PropertyGroup>
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
