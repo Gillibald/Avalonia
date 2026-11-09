@@ -177,6 +177,9 @@ namespace Avalonia.Imaging.TestKit.Instrumentation
                 public NativeMemory(long byteCount)
                 {
                     _address = Marshal.AllocHGlobal(new IntPtr(byteCount));
+
+                    // IBitmapMemoryAllocator hands out initialized bytes.
+                    Marshal.Copy(new byte[byteCount], 0, _address, (int)byteCount);
                     ByteCount = byteCount;
                 }
 

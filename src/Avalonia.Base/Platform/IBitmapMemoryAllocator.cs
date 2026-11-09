@@ -13,9 +13,10 @@ namespace Avalonia.Platform
     public interface IBitmapMemoryAllocator
     {
         /// <summary>
-        /// Rents a native buffer of at least <paramref name="byteCount"/> bytes. The
-        /// buffer contents are undefined - a recycled buffer still holds the previous
-        /// rental's bytes - so a renter must fully overwrite every byte it exposes.
+        /// Rents a native buffer of at least <paramref name="byteCount"/> bytes. Every byte
+        /// is initialized, because native decoders borrow the buffer as initialized memory:
+        /// a fresh buffer is zeroed, a recycled one still holds the previous rental's
+        /// bytes, so a renter must fully overwrite every byte it exposes.
         /// </summary>
         IBitmapMemory Rent(long byteCount);
     }

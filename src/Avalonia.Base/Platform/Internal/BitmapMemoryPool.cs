@@ -115,9 +115,28 @@ namespace Avalonia.Platform.Internal
 
             var address = Marshal.AllocHGlobal(new IntPtr(bucket));
 
+            // Renters may borrow the buffer as initialized memory before writing it, so a bucket
+            // is cleared once here; recycled buckets keep the bytes of their previous rental.
+            Clear(address, bucket);
+
             GC.AddMemoryPressure(bucket);
 
             return new PooledBitmapMemory(this, address, byteCount, bucket);
+        }
+
+        private static unsafe void Clear(IntPtr address, long byteCount)
+        {
+            var start = (byte*)address;
+
+            while (byteCount > 0)
+            {
+                var chunk = (int)Math.Min(byteCount, int.MaxValue);
+
+                new Span<byte>(start, chunk).Clear();
+
+                start += chunk;
+                byteCount -= chunk;
+            }
         }
 
         /// <summary>

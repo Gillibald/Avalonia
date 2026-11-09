@@ -830,6 +830,9 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 {
                     _owner = owner;
                     _address = Marshal.AllocHGlobal((IntPtr)byteCount);
+
+                    // IBitmapMemoryAllocator hands out initialized bytes.
+                    Marshal.Copy(new byte[byteCount], 0, _address, (int)byteCount);
                     ByteCount = byteCount;
                 }
 
