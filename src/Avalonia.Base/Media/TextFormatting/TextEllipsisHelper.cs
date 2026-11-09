@@ -1,4 +1,6 @@
-﻿using Avalonia.Media.TextFormatting.Unicode;
+﻿using System.Collections.Generic;
+using Avalonia.Media.TextFormatting.Unicode;
+using Avalonia.Utilities;
 
 namespace Avalonia.Media.TextFormatting
 {
@@ -106,6 +108,92 @@ namespace Avalonia.Media.TextFormatting
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Appends the longest logical suffix of <paramref name="logicalRuns"/> that fits into
+        /// <paramref name="availableWidth"/> to <paramref name="target"/>, in logical order.
+        /// </summary>
+        /// <remarks>
+        /// Runs are taken whole from the logical end while they fit. The first run that does not fit
+        /// contributes its fitting trailing characters if it is shaped text, nothing if it is an inline
+        /// object, and ends the walk. Stopping there keeps the result contiguous: with mixed fonts an
+        /// earlier run can still have characters narrow enough for the leftover width, and taking them
+        /// would join text that is not adjacent in the source.
+        /// </remarks>
+        public static void AppendFittingSuffix(IReadOnlyList<TextRun> logicalRuns, double availableWidth,
+            List<TextRun> target)
+        {
+            var start = target.Count;
+
+            for (var i = logicalRuns.Count - 1; i >= 0; i--)
+            {
+                if (!TryAppendFromEnd(logicalRuns[i], ref availableWidth, target))
+                {
+                    break;
+                }
+            }
+
+            // The walk appends from the logical end backwards.
+            target.Reverse(start, target.Count - start);
+        }
+
+        /// <summary>
+        /// Appends <paramref name="run"/>, or the part of it that fits, and returns whether the whole
+        /// run fit so the walk can continue with the run before it.
+        /// </summary>
+        private static bool TryAppendFromEnd(TextRun run, ref double availableWidth, List<TextRun> target)
+        {
+            switch (run)
+            {
+                case ShapedTextRun shapedRun:
+                    {
+                        var width = shapedRun.Size.Width;
+
+                        if (!MathUtilities.GreaterThan(width, availableWidth))
+                        {
+                            target.Add(shapedRun);
+                            availableWidth -= width;
+
+                            return true;
+                        }
+
+                        if (shapedRun.TryMeasureCharactersBackwards(availableWidth, out var length, out _))
+                        {
+                            if (length >= shapedRun.Length)
+                            {
+                                target.Add(shapedRun);
+                            }
+                            else
+                            {
+                                target.Add(shapedRun.Split(shapedRun.Length - length).Second!);
+                            }
+                        }
+
+                        return false;
+                    }
+                case DrawableTextRun drawableRun:
+                    {
+                        var width = drawableRun.Size.Width;
+
+                        if (MathUtilities.GreaterThan(width, availableWidth))
+                        {
+                            return false;
+                        }
+
+                        target.Add(drawableRun);
+                        availableWidth -= width;
+
+                        return true;
+                    }
+                default:
+                    {
+                        // End-of-line runs take no width.
+                        target.Add(run);
+
+                        return true;
+                    }
+            }
         }
     }
 }
