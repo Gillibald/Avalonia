@@ -651,6 +651,10 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
+            // The source can itself be a synthetic (a cached Bold for a Bold Italic request). The clone
+            // below is of its designed face, so the source's simulations have to be carried over.
+            fontSimulations |= glyphTypeface.FontSimulations;
+
             if (glyphTypeface.FontMemory is not SfntFace face)
             {
                 return false;
