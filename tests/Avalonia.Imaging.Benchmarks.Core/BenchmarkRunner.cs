@@ -264,7 +264,9 @@ namespace Avalonia.Imaging.Benchmarks
             Scheduling = _options.Scheduling,
             SkiaSharpVersion = Version(typeof(SkiaSharp.SKImage).Assembly),
             PixelManVersion = Version(typeof(Avalonia.PixelMan.PmBitmapFrame).Assembly),
+#if BENCHMARK_IMAGESHARP
             ImageSharpVersion = Version(typeof(SixLabors.ImageSharp.Image).Assembly),
+#endif
             Timestamp = DateTimeOffset.UtcNow.ToString("u"),
             Warmup = _options.Warmup,
             Iterations = _options.Iterations,

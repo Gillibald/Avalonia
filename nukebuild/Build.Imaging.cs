@@ -112,7 +112,14 @@ partial class Build
         .DependsOn(PixelManLocal)
         .Executes(() =>
         {
-            foreach (var project in new[] { "Avalonia.Imaging.PixelMan.Tests", "Avalonia.Imaging.ImageSharp.Tests" })
+            var projects = new List<string> { "Avalonia.Imaging.PixelMan.Tests" };
+            // ImageSharp 4 does not build without a Six Labors licence key.
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SIXLABORS_LICENSE_KEY")))
+                Warning("SIXLABORS_LICENSE_KEY is not set; skipping Avalonia.Imaging.ImageSharp.Tests.");
+            else
+                projects.Add("Avalonia.Imaging.ImageSharp.Tests");
+
+            foreach (var project in projects)
             {
                 var path = RootDirectory / "tests" / project / (project + ".csproj");
                 Exec(DotNetTasks.DotNetPath, $"build \"{path}\" -c Release", RootDirectory);

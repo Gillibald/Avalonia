@@ -4,6 +4,10 @@
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- ImageSharp 4 does not build without a Six Labors licence key, so machines without one
+         compare Skia and PixelMan only; -p:BenchmarkImageSharp=false drops it explicitly. -->
+    <BenchmarkImageSharp Condition="'$(BenchmarkImageSharp)' == '' and '$(SIXLABORS_LICENSE_KEY)' != ''">true</BenchmarkImageSharp>
+    <DefineConstants Condition="'$(BenchmarkImageSharp)' == 'true'">$(DefineConstants);BENCHMARK_IMAGESHARP</DefineConstants>
   </PropertyGroup>
   <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
     <Error Text="No local PixelMan build is selected. Run ./build.sh PixelManLocal (build.cmd on Windows) first; --pixelman &lt;checkout or git ref&gt; picks another PixelMan." />
@@ -14,6 +18,6 @@
     <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />
     <ProjectReference Include="..\..\src\Skia\Avalonia.Skia\Avalonia.Skia.csproj" />
     <ProjectReference Include="..\..\src\Imaging\Avalonia.Imaging.PixelMan\Avalonia.Imaging.PixelMan.csproj" />
-    <ProjectReference Include="..\..\src\Imaging\Avalonia.Imaging.ImageSharp\Avalonia.Imaging.ImageSharp.csproj" />
+    <ProjectReference Include="..\..\src\Imaging\Avalonia.Imaging.ImageSharp\Avalonia.Imaging.ImageSharp.csproj" Condition="'$(BenchmarkImageSharp)' == 'true'" />
   </ItemGroup>
 </Project>

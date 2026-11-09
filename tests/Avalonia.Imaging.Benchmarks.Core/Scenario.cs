@@ -116,6 +116,7 @@ namespace Avalonia.Imaging.Benchmarks
                         null, null);
                 }
 
+#if BENCHMARK_IMAGESHARP
                 if (backend == BenchmarkBackends.ImageSharp.Name)
                 {
                     // ImageSharp decodes into the pixel type that matches the stored layout.
@@ -123,6 +124,7 @@ namespace Avalonia.Imaging.Benchmarks
 
                     return new ScenarioOutcome(image.Width, image.Height, image.PixelType.ToString() ?? "", null, null, null);
                 }
+#endif
 
                 using var frame = Avalonia.PixelMan.PmBitmapFrame.Decode(new MemoryStream(fixture.Data, writable: false));
 
