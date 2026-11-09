@@ -60,6 +60,9 @@ else {
     } else {
         ExecSafe { & powershell $DotNetInstallFile -InstallDir $DotNetDirectory -Version $DotNetVersion -NoPath }
     }
+    # The build project and the tests target AvsCurrentTargetFramework (build/TargetFrameworks.props),
+    # whose runtime a preview SDK does not carry.
+    ExecSafe { & powershell $DotNetInstallFile -InstallDir $DotNetDirectory -Runtime dotnet -Channel 10.0 -NoPath }
     $env:DOTNET_EXE = "$DotNetDirectory\dotnet.exe"
 }
 

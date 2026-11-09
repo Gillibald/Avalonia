@@ -53,6 +53,9 @@ else
     else
         "$DOTNET_INSTALL_FILE" --install-dir "$DOTNET_DIRECTORY" --version "$DOTNET_VERSION" --no-path
     fi
+    # The build project and the tests target AvsCurrentTargetFramework (build/TargetFrameworks.props),
+    # whose runtime a preview SDK does not carry.
+    "$DOTNET_INSTALL_FILE" --install-dir "$DOTNET_DIRECTORY" --runtime dotnet --channel 10.0 --no-path
     export DOTNET_EXE="$DOTNET_DIRECTORY/dotnet"
 fi
 
