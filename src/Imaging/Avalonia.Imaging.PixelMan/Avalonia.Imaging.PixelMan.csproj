@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    The backend builds against a local PixelMan build (src/Imaging/PixelMan.Local/BuildLocal.ps1),
+    The backend builds against a local PixelMan build (./build.sh PixelManLocal),
     restored from the folder NuGet.config next to this file names, so this project is not part
     of the solution yet.
   -->
@@ -9,9 +9,9 @@
     <RootNamespace>Avalonia.Imaging.PixelMan</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <!-- Restore needs the package BuildLocal.ps1 packs from a PixelMan checkout. -->
+  <!-- Restore needs the package the PixelManLocal build target packs. -->
   <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
-    <Error Text="No local PixelMan build is selected. Run src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath &lt;PixelMan checkout&gt; first." />
+    <Error Text="No local PixelMan build is selected. Run ./build.sh PixelManLocal (build.cmd on Windows) first; --pixelman &lt;checkout or git ref&gt; picks another PixelMan." />
   </Target>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />

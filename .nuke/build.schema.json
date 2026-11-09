@@ -36,9 +36,12 @@
         "DownloadApiBaselinePackages",
         "EmbedSbom",
         "GenerateUnicodeData",
+        "ImagingBenchmarks",
+        "ImagingTests",
         "InitDnx",
         "OutputApiDiff",
         "Package",
+        "PixelManLocal",
         "RunCoreLibsTests",
         "RunHtmlPreviewerTests",
         "RunLeakTests",
@@ -120,6 +123,23 @@
   "allOf": [
     {
       "properties": {
+        "BenchFilter": {
+          "type": "string",
+          "description": "Benchmark only scenarios or fixtures containing this text"
+        },
+        "BenchOut": {
+          "type": "string",
+          "description": "Results folder (default artifacts/imaging-benchmarks/<timestamp>)"
+        },
+        "BenchQuick": {
+          "type": "boolean",
+          "description": "Fewer warm-up and timed iterations"
+        },
+        "BenchRuns": {
+          "type": "integer",
+          "description": "Benchmark runs per leg (default 2); the report keeps each case's best median",
+          "format": "int32"
+        },
         "configuration": {
           "type": "string"
         },
@@ -128,6 +148,18 @@
         },
         "force-nuget-version": {
           "type": "string"
+        },
+        "pixelman": {
+          "type": "string",
+          "description": "PixelMan to build: a checkout path, or a git ref of https://github.com/AvaloniaUI/PixelMan.git. Default: the commit in src/Imaging/PixelMan.Local/PixelMan.commit"
+        },
+        "pixelman-android": {
+          "type": "boolean",
+          "description": "Also build PixelMan's android-arm64 library"
+        },
+        "pixelman-browser": {
+          "type": "boolean",
+          "description": "Also build PixelMan's browser-wasm archive"
         },
         "skip-tests": {
           "type": "boolean"

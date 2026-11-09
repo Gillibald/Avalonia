@@ -8,7 +8,7 @@ Compares Avalonia's SkiaSharp and PixelMan imaging backends on the same inputs, 
 | `Avalonia.Imaging.Benchmarks` | Console host (Windows, macOS, Linux) |
 | `Avalonia.Imaging.Benchmarks.Browser` | WebAssembly host (.NET 11 browser workload) |
 
-The projects restore the local PixelMan build, so run `src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath <PixelMan checkout>` first (`-Browser` for the browser host). Like the PixelMan adapter, they are not part of `Avalonia.slnx`.
+The projects restore the local PixelMan build, so run `./build.sh PixelManLocal` first (`build.cmd` on Windows; `--pixelman <checkout or git ref>` for another PixelMan, `--pixelman-browser` for the browser host). `./build.sh ImagingBenchmarks` does that and runs the console benchmarks, see below. Like the PixelMan adapter, they are not part of `Avalonia.slnx`.
 
 ## What is fair
 
@@ -23,7 +23,15 @@ The projects restore the local PixelMan build, so run `src/Imaging/PixelMan.Loca
 
 ## Running
 
-Console (Windows, or Linux with a `linux-x64` publish):
+One command on Windows, macOS or Linux, from a clean clone (the bootstrapper installs the .NET SDK, and a Rust toolchain goes under `.nuke/temp` when none is installed; Windows needs the MSVC build tools, Linux a C linker):
+
+```bash
+./build.sh ImagingBenchmarks
+```
+
+It clones PixelMan at the commit in `src/Imaging/PixelMan.Local/PixelMan.commit` (or builds `--pixelman <checkout or git ref>`), packs it, runs the console host `--bench-runs` times (default 2) and writes `<os>-<arch>-<n>.json`, the Markdown tables and `report.html` to `artifacts/imaging-benchmarks/<timestamp>` (or `--bench-out <dir>`). `--bench-quick` and `--bench-filter <text>` pass through. Send the whole folder; `report` merges folders from any number of machines. `./build.sh ImagingTests` runs the backend tests against the same PixelMan build.
+
+Console host directly (Windows, macOS, Linux):
 
 ```bash
 dotnet run -c Release --project tests/Avalonia.Imaging.Benchmarks -- run --out results.json --markdown results.md
@@ -57,4 +65,4 @@ Serve `bin/Release/net11.0/publish/wwwroot` and open it. `?quick` and `?filter=<
 
 The browser host runs under the .NET interpreter by default, Avalonia's default for browser apps; publish with `-p:RunAOTCompilation=true` for Mono AOT. AOT needs a PixelMan build whose bindings are plain `DllImport` declarations: Mono's AOT compiler in .NET 11 rc.2 aborts (`sgen-alloc.c:409`) on any import carrying `[UnmanagedCallConv]`. The host also lifts SkiaSharp to 4.153.1, because 3.119.4 has no archive that links with .NET 11's Emscripten; see the comments in its project file.
 
-Linux: publish the console host with `-r linux-x64 --self-contained` and run it there. PixelMan then needs its `linux-x64` library in the local package, which `BuildLocal.ps1` builds when run on Linux.
+Linux: publish the console host with `-r linux-x64 --self-contained` and run it there. PixelMan then needs its `linux-x64` library in the local package, which `PixelManLocal` builds when run on Linux.

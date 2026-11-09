@@ -2,7 +2,7 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-  <!-- PixelMan comes from a local build: BuildLocal.ps1 packs it and writes PixelMan.local.props,
+  <!-- PixelMan comes from a local build: the PixelManLocal build target packs it and writes PixelMan.local.props,
        which sets PixelManVersion. Without it the PixelMan projects stop with an error. -->
   <Import Project="src/Imaging/PixelMan.Local/PixelMan.local.props" Condition="Exists('src/Imaging/PixelMan.Local/PixelMan.local.props')" />
   <ItemGroup>

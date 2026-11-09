@@ -4,9 +4,9 @@
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-  <!-- Restore needs the package BuildLocal.ps1 packs from a PixelMan checkout. -->
+  <!-- Restore needs the package the PixelManLocal build target packs. -->
   <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
-    <Error Text="No local PixelMan build is selected. Run src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath &lt;PixelMan checkout&gt; first." />
+    <Error Text="No local PixelMan build is selected. Run ./build.sh PixelManLocal (build.cmd on Windows) first; --pixelman &lt;checkout or git ref&gt; picks another PixelMan." />
   </Target>
   <Import Project="..\..\build\UnitTests.NetCore.targets" />
   <Import Project="..\..\build\XUnit.props" />

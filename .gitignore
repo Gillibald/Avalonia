@@ -230,3 +230,6 @@ src/Browser/Avalonia.Browser/staticwebassets
 BenchmarkDotNet.Artifacts.*
 .tokensave
 /CLAUDE.md
+
+# Build tool downloads: the PixelMan clone and a local Rust toolchain of the imaging targets
+.nuke/temp/

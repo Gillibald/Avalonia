@@ -6,7 +6,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
-    <Error Text="No local PixelMan build is selected. Run src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath &lt;PixelMan checkout&gt; first." />
+    <Error Text="No local PixelMan build is selected. Run ./build.sh PixelManLocal (build.cmd on Windows) first; --pixelman &lt;checkout or git ref&gt; picks another PixelMan." />
   </Target>
   <Import Project="..\..\build\SharedVersion.props" />
   <Import Project="..\..\build\NullableEnable.props" />
