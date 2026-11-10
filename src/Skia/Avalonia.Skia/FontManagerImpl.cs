@@ -206,7 +206,7 @@ namespace Avalonia.Skia
             var reportedStretch = allSimulations != FontSimulations.None ? stretch : faceStretch;
 
             return new SkiaTypeface(skTypeface, fontSimulations, platformSimulations, reportedStyle, reportedWeight,
-                reportedStretch);
+                reportedStretch, mayBeNamedInstance: true);
         }
 
         /// <summary>
