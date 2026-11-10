@@ -7,6 +7,7 @@ using Avalonia.Imaging.Benchmarks;
 // compare <baseline.json> <current.json> [--threshold <percent>]
 // fixtures <dir> [--images <dir>]: writes the fixtures for the browser host
 // report <dir or file.json>... --out <file.html>: one page from the reports of any machines and hosts
+// launch <program> [args...]: runs another benchmark program (a browser, a WPF host) on the cores this host picks
 var command = args.FirstOrDefault() ?? "run";
 
 string? Option(string name) =>

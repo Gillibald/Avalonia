@@ -63,7 +63,14 @@ namespace Avalonia.Imaging.Benchmarks
 
             if (WindowsFastestCpuSets() is { } sets &&
                 SetProcessDefaultCpuSets(Process.GetCurrentProcess().Handle, sets.Ids, (uint)sets.Ids.Length))
+            {
                 notes.Add($"{sets.Ids.Length} of {sets.Total} logical processors (highest efficiency class)");
+
+                // CPU sets stay with this process; an affinity mask is what child processes such
+                // as a headless browser inherit. Masks address one processor group only.
+                if (sets.Mask != 0)
+                    Process.GetCurrentProcess().ProcessorAffinity = (IntPtr)sets.Mask;
+            }
 
             try
             {
@@ -81,7 +88,7 @@ namespace Avalonia.Imaging.Benchmarks
         /// The CPU set ids of the highest efficiency class, or null when every logical processor
         /// is in the same class (no hybrid CPU) and there is nothing to choose.
         /// </summary>
-        private static (uint[] Ids, int Total)? WindowsFastestCpuSets()
+        private static (uint[] Ids, int Total, long Mask)? WindowsFastestCpuSets()
         {
             GetSystemCpuSetInformation(IntPtr.Zero, 0, out var length, IntPtr.Zero, 0);
             if (length == 0)
@@ -91,23 +98,28 @@ namespace Avalonia.Imaging.Benchmarks
             if (!GetSystemCpuSetInformation(buffer, length, out length, IntPtr.Zero, 0))
                 return null;
 
-            // SYSTEM_CPU_SET_INFORMATION: Size, Type, then the CpuSet member: Id at 8, EfficiencyClass at 18.
-            var sets = new List<(uint Id, byte EfficiencyClass)>();
+            // SYSTEM_CPU_SET_INFORMATION: Size, Type, then the CpuSet member: Id at 8, Group at 12,
+            // LogicalProcessorIndex at 14, EfficiencyClass at 18.
+            var sets = new List<(uint Id, ushort Group, byte Index, byte EfficiencyClass)>();
             for (var offset = 0; offset + 19 <= length;)
             {
                 var size = BitConverter.ToInt32(buffer, offset);
                 if (size <= 0)
                     break;
                 if (BitConverter.ToInt32(buffer, offset + 4) == 0)
-                    sets.Add((BitConverter.ToUInt32(buffer, offset + 8), buffer[offset + 18]));
+                    sets.Add((BitConverter.ToUInt32(buffer, offset + 8), BitConverter.ToUInt16(buffer, offset + 12),
+                        buffer[offset + 14], buffer[offset + 18]));
                 offset += size;
             }
 
             if (sets.Count == 0)
                 return null;
             var fastest = sets.Max(s => s.EfficiencyClass);
-            var ids = sets.Where(s => s.EfficiencyClass == fastest).Select(s => s.Id).ToArray();
-            return ids.Length == sets.Count ? null : (ids, sets.Count);
+            var chosen = sets.Where(s => s.EfficiencyClass == fastest).ToList();
+            var mask = chosen.All(s => s.Group == 0 && s.Index < 64)
+                ? chosen.Aggregate(0L, (m, s) => m | (1L << s.Index))
+                : 0;
+            return chosen.Count == sets.Count ? null : (chosen.Select(s => s.Id).ToArray(), sets.Count, mask);
         }
 
         private static string Linux()
