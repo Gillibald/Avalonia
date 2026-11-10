@@ -42,7 +42,8 @@ namespace Avalonia.Imaging.Benchmarks.Android
                 Log.Info(Tag, "loading fixtures from " + fixtureFolder);
                 var (fixtures, encodeSource) = await Fixtures.LoadAsync(
                     name => File.ReadAllBytesAsync(Path.Combine(fixtureFolder, name)));
-                var host = "android-" + (System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Contains("Mono") ? "mono" : "coreclr");
+                // FrameworkDescription reads ".NET 10.x" on both runtimes; only Mono's CoreLib has this type.
+                var host = "android-" + (Type.GetType("Mono.RuntimeStructs") is null ? "coreclr" : "mono");
                 var report = new BenchmarkRunner(options, line => Log.Info(Tag, line)).Run(host, fixtures, encodeSource);
 
                 Write(Path.Combine(folder, "report.json"), ReportWriter.ToJson(report));
