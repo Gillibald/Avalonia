@@ -13,7 +13,8 @@ using static Serilog.Log;
 // Imaging backends, tests and benchmarks against a local PixelMan build, on any desktop OS:
 //   ./build.sh PixelManLocal [--pixelman <checkout path or git ref>] [--pixelman-browser] [--pixelman-android]
 //   ./build.sh ImagingTests [--pixelman ...]
-//   ./build.sh ImagingBenchmarks [--pixelman ...] [--bench-runs 2] [--bench-quick] [--bench-filter <text>] [--bench-out <dir>]
+//   ./build.sh ImagingBenchmarks [--pixelman ...] [--bench-legs desktop browser android] [--bench-runs 2]
+//                                [--bench-quick] [--bench-filter <text>] [--bench-out <dir>]
 partial class Build
 {
     const string PixelManRepository = "https://github.com/AvaloniaUI/PixelMan.git";
@@ -40,6 +41,10 @@ partial class Build
     [Parameter("Results folder (default artifacts/imaging-benchmarks/<timestamp>)")]
     readonly AbsolutePath BenchOut;
 
+    [Parameter("Legs to run: desktop (default), browser (interpreter and AOT in a headless Chromium), " +
+               "android (CoreCLR and Mono on the attached device)")]
+    readonly string[] BenchLegs = ["desktop"];
+
     AbsolutePath PixelManLocalDir => RootDirectory / "src" / "Imaging" / "PixelMan.Local";
     AbsolutePath ImagingToolsDir => RootDirectory / ".nuke" / "temp" / "imaging";
 
@@ -63,7 +68,7 @@ partial class Build
             (runtimes / "browser-wasm").DeleteDirectory();
             (runtimes / "android-arm64").DeleteDirectory();
 
-            if (PixelManBrowser)
+            if (PixelManBrowser || BenchLegs.Contains("browser"))
             {
                 AddRustTarget(cargo, "wasm32-unknown-emscripten");
                 // The cdylib output needs emcc on PATH for this target; the browser links only the archive.
@@ -78,7 +83,7 @@ partial class Build
                 rids.Add("browser-wasm");
             }
 
-            if (PixelManAndroid)
+            if (PixelManAndroid || BenchLegs.Contains("android"))
             {
                 AddRustTarget(cargo, "aarch64-linux-android");
                 Exec(cargo.Path, "build --release -p pixelman-ffi --target aarch64-linux-android", rust,
@@ -136,22 +141,46 @@ partial class Build
             var project = RootDirectory / "tests" / "Avalonia.Imaging.Benchmarks" / "Avalonia.Imaging.Benchmarks.csproj";
             Exec(DotNetTasks.DotNetPath, $"build \"{project}\" -c Release", RootDirectory);
 
-            // The file name is the leg: runs of one machine merge, other machines' legs stay apart.
-            var leg = $"{OsName()}-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}";
-            var options = (BenchQuick ? " --quick" : "") + (BenchFilter is null ? "" : $" --filter \"{BenchFilter}\"");
-            for (var run = 1; run <= Math.Max(1, BenchRuns); run++)
+            var unknown = BenchLegs.Except(["desktop", "browser", "android"]).ToList();
+            if (unknown.Count > 0)
+                throw new InvalidOperationException($"Unknown --bench-legs {string.Join(", ", unknown)}; use desktop, browser, android.");
+
+            if (BenchLegs.Contains("desktop"))
+                DesktopLeg(project, output);
+
+            // The browser and the phone load the fixtures the console host writes: generating them
+            // there takes minutes, and the hashes in every report prove all hosts decode the same bytes.
+            if (BenchLegs.Contains("browser") || BenchLegs.Contains("android"))
             {
-                Information("Benchmark run {Run} of {Runs}", run, BenchRuns);
-                Exec(DotNetTasks.DotNetPath,
-                    $"run --project \"{project}\" -c Release --no-build -- run{options} " +
-                    $"--out \"{output / $"{leg}-{run}.json"}\" --markdown \"{output / $"{leg}-{run}.md"}\"",
+                var fixtures = ImagingToolsDir / "bench-work" / "fixtures";
+                fixtures.DeleteDirectory();
+                Exec(DotNetTasks.DotNetPath, $"run --project \"{project}\" -c Release --no-build -- fixtures \"{fixtures}\"",
                     RootDirectory);
+                if (BenchLegs.Contains("browser"))
+                    BrowserLeg(project, fixtures, output);
+                if (BenchLegs.Contains("android"))
+                    AndroidLeg(fixtures, output);
             }
 
             Exec(DotNetTasks.DotNetPath, $"run --project \"{project}\" -c Release --no-build -- report \"{output}\" --out \"{output / "report.html"}\"",
                 RootDirectory);
             Information("Results in {Output}; send the whole folder, report.html merges any number of them.", output);
         });
+
+    void DesktopLeg(AbsolutePath project, AbsolutePath output)
+    {
+        // The file name is the leg: runs of one machine merge, other machines' legs stay apart.
+        var leg = $"{OsName()}-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}";
+        var options = (BenchQuick ? " --quick" : "") + (BenchFilter is null ? "" : $" --filter \"{BenchFilter}\"");
+        for (var run = 1; run <= Math.Max(1, BenchRuns); run++)
+        {
+            Information("Desktop run {Run} of {Runs}", run, BenchRuns);
+            Exec(DotNetTasks.DotNetPath,
+                $"run --project \"{project}\" -c Release --no-build -- run{options} " +
+                $"--out \"{output / $"{leg}-{run}.json"}\" --markdown \"{output / $"{leg}-{run}.md"}\"",
+                RootDirectory);
+        }
+    }
 
     /// <summary>The PixelMan checkout to build: the given path, or a clone at the given or pinned ref.</summary>
     AbsolutePath PixelManCheckout()
@@ -315,10 +344,7 @@ partial class Build
         var ndk = Environment.GetEnvironmentVariable("ANDROID_NDK_ROOT");
         if (string.IsNullOrEmpty(ndk))
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var sdk = Environment.GetEnvironmentVariable("ANDROID_HOME") ?? (OperatingSystem.IsWindows()
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk")
-                : OperatingSystem.IsMacOS() ? Path.Combine(home, "Library", "Android", "sdk") : Path.Combine(home, "Android", "Sdk"));
+            var sdk = AndroidSdkDirectory();
             ndk = Directory.Exists(Path.Combine(sdk, "ndk"))
                 ? Directory.GetDirectories(Path.Combine(sdk, "ndk"))
                     .OrderBy(d => Version.TryParse(Path.GetFileName(d), out var v) ? v : new Version())
@@ -342,6 +368,16 @@ partial class Build
             ["CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"] =
                 "-C link-arg=--target=aarch64-linux-android24 -C link-arg=-Wl,-z,max-page-size=16384",
         };
+    }
+
+    /// <summary>ANDROID_HOME, or the folder Android Studio installs the SDK to on this OS.</summary>
+    static string AndroidSdkDirectory()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Environment.GetEnvironmentVariable("ANDROID_HOME") is { Length: > 0 } sdk ? sdk
+            : OperatingSystem.IsWindows()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk")
+                : OperatingSystem.IsMacOS() ? Path.Combine(home, "Library", "Android", "sdk") : Path.Combine(home, "Android", "Sdk");
     }
 
     static void CopyInto(AbsolutePath file, AbsolutePath directory)

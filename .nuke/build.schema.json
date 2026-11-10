@@ -127,6 +127,13 @@
           "type": "string",
           "description": "Benchmark only scenarios or fixtures containing this text"
         },
+        "BenchLegs": {
+          "type": "array",
+          "description": "Legs to run: desktop (default), browser (interpreter and AOT in a headless Chromium), android (CoreCLR and Mono on the attached device)",
+          "items": {
+            "type": "string"
+          }
+        },
         "BenchOut": {
           "type": "string",
           "description": "Results folder (default artifacts/imaging-benchmarks/<timestamp>)"

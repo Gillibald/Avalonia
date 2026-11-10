@@ -29,7 +29,12 @@ One command on Windows, macOS or Linux, from a clean clone (the bootstrapper ins
 ./build.sh ImagingBenchmarks
 ```
 
-It clones PixelMan at the commit in `src/Imaging/PixelMan.Local/PixelMan.commit` (or builds `--pixelman <checkout or git ref>`), packs it, runs the console host `--bench-runs` times (default 2) and writes `<os>-<arch>-<n>.json`, the Markdown tables and `report.html` to `artifacts/imaging-benchmarks/<timestamp>` (or `--bench-out <dir>`). `--bench-quick` and `--bench-filter <text>` pass through. Send the whole folder; `report` merges folders from any number of machines. `./build.sh ImagingTests` runs the backend tests against the same PixelMan build.
+It clones PixelMan at the commit in `src/Imaging/PixelMan.Local/PixelMan.commit` (or builds `--pixelman <checkout or git ref>`), packs it, runs the console host `--bench-runs` times (default 2) and writes `<os>-<arch>-<n>.json`, the Markdown tables and `report.html` to `artifacts/imaging-benchmarks/<timestamp>` (or `--bench-out <dir>`). `--bench-quick` and `--bench-filter <text>` pass through. `--bench-legs desktop browser android` adds the other hosts to the same folder:
+
+- `browser`: publishes the browser host for the interpreter and for Mono AOT and runs each in an installed Chrome, Edge or Chromium, headless and on the cores the console host picks (`browser-interp-<n>`, `browser-aot-<n>`). Needs the `wasm-tools-net10` workload.
+- `android`: builds the Android host for CoreCLR and Mono, installs it on the one device adb lists, pushes the fixtures and pulls the reports (`android-coreclr-<n>`, `android-mono-<n>`). Needs the `android` workload, an Android NDK (`ANDROID_NDK_ROOT`, or the newest under the SDK) and USB debugging.
+
+Send the whole folder; `report` merges folders from any number of machines. `./build.sh ImagingTests` runs the backend tests against the same PixelMan build.
 
 Console host directly (Windows, macOS, Linux):
 
