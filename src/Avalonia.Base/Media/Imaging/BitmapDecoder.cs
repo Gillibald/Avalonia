@@ -120,7 +120,7 @@ namespace Avalonia.Media.Imaging
             }
 
             var backend = ImagingBackend.Current;
-            var decode = DecodePaletteStep.Split(options, out var paletteStep);
+            var decode = DecodePaletteStep.Split(options, backend, stream, out var paletteStep);
             var impl = backend.CreateDecoder(stream, ownsStream, ResolveFormatProfile(decode));
 
             if (options?.FormatProfile == BitmapFormatProfile.Wic &&

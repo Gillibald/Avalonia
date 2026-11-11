@@ -145,7 +145,7 @@ namespace Avalonia.Skia
 
             try
             {
-                var decode = Media.Imaging.DecodePaletteStep.Split(options, out var paletteStep);
+                var decode = Media.Imaging.DecodePaletteStep.Split(options, backend, stream, out var paletteStep);
                 using var decoder = backend.CreateDecoder(stream, ownsStream: false,
                     Media.Imaging.BitmapDecoder.ResolveFormatProfile(decode, this));
                 using var frame = decoder.ReadNextFrame() ??

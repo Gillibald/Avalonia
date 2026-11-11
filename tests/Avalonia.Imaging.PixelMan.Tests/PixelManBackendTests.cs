@@ -684,6 +684,50 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(kind == "scaled-jpeg" ? new PixelSize(16, 12) : new PixelSize(64, 48), pixels.Size);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_Decode_To_A_Palette_Should_Map_Inside_PixelMan_When_Nothing_Runs_After_It(bool scaled)
+        {
+            var allocator = new CountingAllocator();
+            using var stream = new MemoryStream();
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(new PixelManImagingBackend(allocator));
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(64, 48, Colors.Red) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            var rentsBeforeDecode = allocator.RentCount;
+
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetFormat = PixelFormats.Indexed8,
+                Palette = new BitmapPalette(new[] { Colors.Black, Colors.Red, Colors.White }),
+                TargetSize = scaled ? new PixelSize(16, 12) : null,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+            using var pixels = frame.Lock();
+
+            Assert.Equal(PixelFormats.Indexed8, pixels.Format);
+            Assert.Equal(1, System.Runtime.InteropServices.Marshal.ReadByte(pixels.Address));
+
+            if (scaled)
+            {
+                // The pipeline scales colours, so PixelMan decodes 32-bit pixels and the core maps them.
+                Assert.Contains(allocator.RentsBySize.Keys, size => size >= 16 * 12 * 4);
+            }
+            else
+            {
+                // PixelMan writes the indices into the frame's only pool rental.
+                Assert.Equal(rentsBeforeDecode + 1, allocator.RentCount);
+                Assert.Equal(Assert.Single(allocator.LiveAddresses), pixels.Address);
+            }
+        }
+
         [Fact]
         public void A_Frame_The_Pool_Cannot_Hold_Should_Fail_To_Lock()
         {

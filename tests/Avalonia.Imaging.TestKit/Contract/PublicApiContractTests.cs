@@ -115,8 +115,9 @@ namespace Avalonia.Imaging.TestKit.Contract
             using var frame = decoder.ReadNextFrame()!;
 
             Assert.Equal(PixelFormats.Indexed8, frame.Format);
+            // A backend that maps inside its decode reports the palette as it decoded it.
             Assert.True(frame.TryGetPalette(out var framePalette));
-            Assert.Same(palette, framePalette);
+            Assert.Equal(palette.Colors, framePalette.Colors);
 
             var pixels = frame.ToPixelBuffer();
 

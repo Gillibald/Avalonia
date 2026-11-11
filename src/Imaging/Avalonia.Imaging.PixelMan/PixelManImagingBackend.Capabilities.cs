@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia.Media.Imaging;
 using Avalonia.PixelMan;
@@ -9,8 +10,42 @@ namespace Avalonia.Imaging.PixelMan
     // PixelMan's conversions, palette generation and colour management, so pixel operations
     // reproduce WIC instead of the core approximations.
     public sealed partial class PixelManImagingBackend : ISupportsPixelConversion, ISupportsPaletteGeneration,
-        ISupportsPixelScaling, IColorTransformProvider
+        ISupportsPixelScaling, IColorTransformProvider, ISupportsPaletteDecode
     {
+        /// <inheritdoc />
+        /// <remarks>
+        /// PixelMan maps inside its decode when nothing in the plan runs after it: no region, no
+        /// target size or JPEG scale, and no EXIF orientation to apply. Those steps work on colours
+        /// in the pipeline, so the core maps their output instead.
+        /// </remarks>
+        bool ISupportsPaletteDecode.DecodesToPalette(Stream stream, BitmapDecodeOptions options)
+        {
+            if (options is not { TargetFormat: { } target, SourceRegion: null, TargetSize: null } ||
+                !DecodePaletteStep.Maps(options, target) ||
+                options is JpegDecodeOptions { ScaleDenominator: not null } ||
+                !stream.CanSeek ||
+                PixelManFormats.ToPixelMan(target, options.TargetAlphaFormat ?? AlphaFormat.Unpremul) is null)
+            {
+                return false;
+            }
+
+            if (!options.RespectExifOrientation)
+                return true;
+
+            var origin = stream.Position;
+
+            try
+            {
+                return TryDetect(stream, origin, out var codec) &&
+                       TryDescribe(stream, origin, codec, out _, out var orientation) &&
+                       orientation is null or <= 1 or > 8;
+            }
+            finally
+            {
+                stream.Position = origin;
+            }
+        }
+
         /// <inheritdoc />
         bool ISupportsPixelConversion.TryCopyPixels(ILockedFramebuffer source, BitmapPalette? sourcePalette,
             PixelRect sourceRect, IntPtr destination, long destinationSize, int destinationStride, PixelFormat format,

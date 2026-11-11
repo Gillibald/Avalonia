@@ -224,8 +224,25 @@ namespace Avalonia.Imaging.PixelMan
                 reducedFrom = info.PixelSize;
             }
 
-            if (TryGetDecodeFormat(options, out var format))
+            var direct = TryGetDecodeFormat(options, out var format);
+
+            if (direct)
                 decodeOptions.TargetFormat = format;
+
+            // A plan the core hands over with its palette maps inside the decode, which copies the
+            // palette at entry.
+            using var targetPalette = direct && format.IsIndexed && options?.Palette is { } palette
+                ? PixelManFormats.ToPixelMan(palette)
+                : null;
+
+            if (options is not null)
+            {
+                decodeOptions.TargetPalette = targetPalette;
+                decodeOptions.Dither = options.Dither == BitmapDitherMode.ErrorDiffusion
+                    ? PmDither.ErrorDiffusion
+                    : PmDither.None;
+                decodeOptions.AlphaThresholdPercent = options.AlphaThresholdPercent;
+            }
 
             try
             {
@@ -280,15 +297,21 @@ namespace Avalonia.Imaging.PixelMan
         // Asks PixelMan to decode straight into the plan's target format: its decode transform
         // fills the pool rental directly, instead of PixelMan writing its own layout and the
         // pipeline converting into a second frame-sized buffer. Cropping, scaling and
-        // reorienting then run on the target format. Indexed targets need a palette, which a
-        // decode does not take, so those keep PixelMan's layout and convert in the pipeline.
+        // reorienting then run on the target format. An indexed target maps to the plan's
+        // palette, which only a plan the core hands over through ISupportsPaletteDecode carries;
+        // without one it keeps PixelMan's layout.
         private static bool TryGetDecodeFormat(BitmapDecodeOptions? options, out PmPixelFormat format)
         {
             format = default;
 
-            if (options is not { TargetFormat: { } target, TargetAlphaFormat: { } alpha } ||
-                target.IsIndexed ||
-                PixelManFormats.ToPixelMan(target, alpha) is not { } requested)
+            if (options is not { TargetFormat: { } target })
+                return false;
+
+            var maps = DecodePaletteStep.Maps(options, target);
+
+            if ((target.IsIndexed && !maps) ||
+                (options.TargetAlphaFormat is null && !maps) ||
+                PixelManFormats.ToPixelMan(target, options.TargetAlphaFormat ?? AlphaFormat.Unpremul) is not { } requested)
             {
                 return false;
             }
