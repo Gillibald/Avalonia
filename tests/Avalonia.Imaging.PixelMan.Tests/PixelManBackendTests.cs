@@ -648,6 +648,42 @@ namespace Avalonia.Imaging.PixelMan.Tests
             }
         }
 
+        [Theory]
+        [InlineData("gif")]
+        [InlineData("scaled-jpeg")]
+        public void A_Frame_Converted_For_The_Renderer_Should_Decode_Straight_Into_The_Pool_For_Any_Plan(string kind)
+        {
+            var allocator = new CountingAllocator();
+            using var stream = new MemoryStream();
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(new PixelManImagingBackend(allocator));
+
+            BitmapEncoder encoder = kind == "gif" ? new GifBitmapEncoder() : new JpegBitmapEncoder { Quality = 100 };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(64, 48, Colors.Red) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            var rentsBeforeDecode = allocator.RentCount;
+
+            // A quarter of the width is a size PixelMan's scaled JPEG decode produces itself.
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetFormat = PixelFormats.Bgra8888,
+                TargetAlphaFormat = AlphaFormat.Premul,
+                TargetSize = kind == "scaled-jpeg" ? new PixelSize(16, 0) : null,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+            using var pixels = frame.Lock();
+
+            Assert.Equal(rentsBeforeDecode + 1, allocator.RentCount);
+            Assert.Equal(Assert.Single(allocator.LiveAddresses), pixels.Address);
+            Assert.Equal(PixelFormats.Bgra8888, pixels.Format);
+            Assert.Equal(AlphaFormat.Premul, pixels.AlphaFormat);
+            Assert.Equal(kind == "scaled-jpeg" ? new PixelSize(16, 12) : new PixelSize(64, 48), pixels.Size);
+        }
+
         [Fact]
         public void A_Frame_The_Pool_Cannot_Hold_Should_Fail_To_Lock()
         {
