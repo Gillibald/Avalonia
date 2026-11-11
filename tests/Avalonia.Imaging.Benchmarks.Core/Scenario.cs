@@ -49,10 +49,13 @@ namespace Avalonia.Imaging.Benchmarks
         /// <summary>Runs once and keeps what is needed to check the output.</summary>
         public ScenarioOutcome RunAndCapture(string backend) => _run(backend, true);
 
-        public static Scenario Decode(string id, Fixture fixture, PixelSize? targetSize) =>
+        public static Scenario Decode(string id, Fixture fixture, PixelSize? targetSize,
+            bool preservePixelFormat = false) =>
             new(id, fixture.Name, ScenarioKind.Decode, (_, capture) =>
             {
-                var options = targetSize is null ? null : new BitmapDecodeOptions { TargetSize = targetSize };
+                var options = targetSize is null && !preservePixelFormat
+                    ? null
+                    : new BitmapDecodeOptions { TargetSize = targetSize, PreservePixelFormat = preservePixelFormat };
 
                 using var decoder = BitmapDecoder.Create(new MemoryStream(fixture.Data, writable: false), options);
                 using var frame = decoder.ReadNextFrame() ??

@@ -111,8 +111,11 @@ namespace Avalonia.Imaging.Benchmarks
             foreach (var fixture in fixtures)
                 yield return Scenario.Decode("decode", fixture, null);
 
+            // A thumbnail stays in each library's own layout, as a gallery decodes it before
+            // anything is drawn; converting for the renderer is the full decode's cost.
             foreach (var fixture in fixtures.Where(f => f.Name is "photo-jpeg" or "photo-png"))
-                yield return Scenario.Decode("decode-quarter", fixture, new PixelSize(fixture.Width / 4, 0));
+                yield return Scenario.Decode("decode-quarter", fixture, new PixelSize(fixture.Width / 4, 0),
+                    preservePixelFormat: true);
 
             foreach (var fixture in fixtures)
                 yield return Scenario.CodecOnly(fixture);
