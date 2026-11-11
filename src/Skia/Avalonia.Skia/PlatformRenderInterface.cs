@@ -145,12 +145,21 @@ namespace Avalonia.Skia
 
             try
             {
+                var decode = Media.Imaging.DecodePaletteStep.Split(options, out var paletteStep);
                 using var decoder = backend.CreateDecoder(stream, ownsStream: false,
-                    Media.Imaging.BitmapDecoder.ResolveFormatProfile(options, this));
+                    Media.Imaging.BitmapDecoder.ResolveFormatProfile(decode, this));
                 using var frame = decoder.ReadNextFrame() ??
                     throw new ArgumentException("Unable to load bitmap from provided data");
 
-                return new ImmutableBitmap(frame.Lock());
+                if (paletteStep is null)
+                    return new ImmutableBitmap(frame.Lock());
+
+                // The bitmap shows the palette's colors, in the format it draws from.
+                using var decoded = frame.Lock();
+                var mapped = paletteStep.Apply(decoded, frame.Dpi)
+                    .Convert(DefaultPixelFormat, DefaultAlphaFormat);
+
+                return new ImmutableBitmap(mapped.Lock());
             }
             catch (NotSupportedException e)
             {

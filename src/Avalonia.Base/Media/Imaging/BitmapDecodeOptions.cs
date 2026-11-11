@@ -45,6 +45,35 @@ namespace Avalonia.Media.Imaging
         public AlphaFormat? TargetAlphaFormat { get; set; }
 
         /// <summary>
+        /// Gets or sets the palette pixels are matched against when <see cref="TargetFormat"/>
+        /// is an indexed format. With a palette, every frame decodes to that format whatever
+        /// the image stores, after the rest of the plan (orientation, region, size) is applied;
+        /// without one, an indexed target is only valid for an image already stored in it.
+        /// Other targets ignore it. Build one with <see cref="BitmapPalette.CreateWellKnown"/>
+        /// or from known colors; an optimal palette needs the decoded image first, so derive it
+        /// from a first decode with
+        /// <see cref="BitmapPalette.CreateOptimal(BitmapFrame, int, bool)"/>.
+        /// </summary>
+        public BitmapPalette? Palette { get; set; }
+
+        /// <summary>
+        /// Gets or sets how a decode to an indexed <see cref="TargetFormat"/> with a
+        /// <see cref="Palette"/>, or to <see cref="PixelFormats.BlackWhite"/>,
+        /// <see cref="PixelFormats.Gray2"/> or <see cref="PixelFormats.Gray4"/>, spreads the
+        /// difference between each pixel and the color it gets, as
+        /// <see cref="PixelConversionOptions.Dither"/> does for a conversion. Other targets ignore it.
+        /// </summary>
+        public BitmapDitherMode Dither { get; set; }
+
+        /// <summary>
+        /// Gets or sets the alpha threshold for a decode to an indexed <see cref="TargetFormat"/>
+        /// with a <see cref="Palette"/>, as a percentage from 0 to 100: pixels less opaque than
+        /// this take the palette entry closest to transparent black, as
+        /// <see cref="PixelConversionOptions.AlphaThresholdPercent"/> does for a conversion.
+        /// </summary>
+        public double AlphaThresholdPercent { get; set; }
+
+        /// <summary>
         /// Gets or sets whether frames keep the image's stored pixel format, named as
         /// <see cref="FormatProfile"/> names it. False, the default, converts frames to the
         /// profile's target format in the decode pass: for

@@ -21,15 +21,18 @@ namespace Avalonia.Media.Imaging
     {
         private readonly IBitmapFrameSource _source;
         private readonly Guid _containerFormat;
+        private readonly DecodePaletteStep? _paletteStep;
         private readonly object _sync = new();
+        private PixelBuffer? _mapped;
         private IRef<IBitmapImpl>? _realized;
         private BitmapFrame? _thumbnail;
         private bool _disposed;
 
-        internal BitmapFrame(IBitmapFrameSource source, Guid containerFormat)
+        internal BitmapFrame(IBitmapFrameSource source, Guid containerFormat, DecodePaletteStep? paletteStep = null)
         {
             _source = source;
             _containerFormat = containerFormat;
+            _paletteStep = paletteStep;
         }
 
         /// <summary>
@@ -45,12 +48,12 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets the pixel format the frame produces, after the decode plan is applied.
         /// </summary>
-        public PixelFormat Format => _source.PixelFormat;
+        public PixelFormat Format => _paletteStep?.Format ?? _source.PixelFormat;
 
         /// <summary>
         /// Gets the alpha format the frame produces, after the decode plan is applied.
         /// </summary>
-        public AlphaFormat AlphaFormat => _source.AlphaFormat;
+        public AlphaFormat AlphaFormat => _paletteStep?.AlphaFormat ?? _source.AlphaFormat;
 
         /// <summary>
         /// Gets the frame's metadata when the active backend exposes it.
@@ -97,6 +100,12 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool TryGetPalette([NotNullWhen(true)] out BitmapPalette? palette)
         {
+            if (_paletteStep is not null)
+            {
+                palette = _paletteStep.Palette;
+                return palette is not null;
+            }
+
             if (_source is IIndexedFrame indexed)
             {
                 palette = indexed.Palette;
@@ -152,8 +161,24 @@ namespace Avalonia.Media.Imaging
             {
                 ThrowIfDisposed();
 
-                return _source.Lock();
+                return LockPixels();
             }
+        }
+
+        // The decoded pixels, mapped to the plan's palette the first time when it has one.
+        private ILockedFramebuffer LockPixels()
+        {
+            if (_paletteStep is null)
+                return _source.Lock();
+
+            if (_mapped is null)
+            {
+                using var decoded = _source.Lock();
+
+                _mapped = _paletteStep.Apply(decoded, _source.Dpi);
+            }
+
+            return _mapped.Lock();
         }
 
         /// <summary>
@@ -228,7 +253,7 @@ namespace Avalonia.Media.Imaging
 
                 _realized ??= RefCountable.Create(
                     AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>()
-                        .LoadBitmap(_source.Lock()));
+                        .LoadBitmap(LockPixels()));
 
                 TryGetMetadata(out var metadata);
 
@@ -247,6 +272,7 @@ namespace Avalonia.Media.Imaging
                 _disposed = true;
                 _realized?.Dispose();
                 _realized = null;
+                _mapped = null;
                 _thumbnail?.Dispose();
                 _thumbnail = null;
                 _source.Dispose();

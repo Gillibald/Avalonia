@@ -16,13 +16,15 @@ namespace Avalonia.Media.Imaging
     public sealed class BitmapDecoder : IDisposable
     {
         private readonly IBitmapDecoder _impl;
+        private readonly DecodePaletteStep? _paletteStep;
         private BitmapCodecInfo? _codecInfo;
         private bool _framesEnumerated;
         private bool _disposed;
 
-        private BitmapDecoder(IBitmapDecoder impl)
+        private BitmapDecoder(IBitmapDecoder impl, DecodePaletteStep? paletteStep)
         {
             _impl = impl;
+            _paletteStep = paletteStep;
         }
 
         /// <summary>
@@ -118,7 +120,8 @@ namespace Avalonia.Media.Imaging
             }
 
             var backend = ImagingBackend.Current;
-            var impl = backend.CreateDecoder(stream, ownsStream, ResolveFormatProfile(options));
+            var decode = DecodePaletteStep.Split(options, out var paletteStep);
+            var impl = backend.CreateDecoder(stream, ownsStream, ResolveFormatProfile(decode));
 
             if (options?.FormatProfile == BitmapFormatProfile.Wic &&
                 (impl.CodecInfo.Capabilities & BitmapCodecCapabilities.WicFormatProfile) == 0)
@@ -131,7 +134,7 @@ namespace Avalonia.Media.Imaging
                     $"The {backend.Name} imaging backend's {format} codec does not decode to the WIC format profile.");
             }
 
-            return new BitmapDecoder(impl);
+            return new BitmapDecoder(impl, paletteStep);
         }
 
         /// <summary>
@@ -275,7 +278,7 @@ namespace Avalonia.Media.Imaging
 
             var frame = _impl.ReadNextFrame();
 
-            return frame is null ? null : new BitmapFrame(frame, _impl.CodecInfo.ContainerFormat);
+            return frame is null ? null : new BitmapFrame(frame, _impl.CodecInfo.ContainerFormat, _paletteStep);
         }
 
         /// <summary>
@@ -314,7 +317,7 @@ namespace Avalonia.Media.Imaging
             if (index < 0 || index >= seekable.FrameCount)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            return new BitmapFrame(seekable.GetFrame(index), _impl.CodecInfo.ContainerFormat);
+            return new BitmapFrame(seekable.GetFrame(index), _impl.CodecInfo.ContainerFormat, _paletteStep);
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Imaging.TestKit.Fixtures;
 using Avalonia.Imaging.TestKit.Instrumentation;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Xunit;
@@ -82,6 +83,119 @@ namespace Avalonia.Imaging.TestKit.Contract
             // The plan output is what got installed, zero-copy.
             Assert.Equal(new PixelSize(8, 8), Fixture.RenderInstall.Size);
             Assert.Equal(PixelFormats.Rgb565, Fixture.RenderInstall.Format);
+        }
+
+        [Theory]
+        [InlineData(false, BitmapDitherMode.None)]
+        [InlineData(false, BitmapDitherMode.ErrorDiffusion)]
+        [InlineData(true, BitmapDitherMode.None)]
+        [InlineData(true, BitmapDitherMode.ErrorDiffusion)]
+        public void DecodePlan_WithPalette_DecodesToTheIndexedTarget(bool scaled, BitmapDitherMode dither)
+        {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
+
+            using var scope = BindPlatform();
+
+            var size = scaled ? new PixelSize(8, 8) : (PixelSize?)null;
+            var palette = new BitmapPalette(new[]
+            {
+                Colors.Black, Colors.White, Colors.Red, Colors.Lime, Colors.Blue, Colors.Gray,
+            });
+            var expected = DecodeThenConvert(FixtureImages.Gradient16Png, size, PixelFormats.Indexed8,
+                new PixelConversionOptions { Palette = palette, Dither = dither });
+
+            using var stream = FixtureImages.Gradient16Png.OpenRead();
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetSize = size,
+                TargetFormat = PixelFormats.Indexed8,
+                Palette = palette,
+                Dither = dither,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(PixelFormats.Indexed8, frame.Format);
+            Assert.True(frame.TryGetPalette(out var framePalette));
+            Assert.Same(palette, framePalette);
+
+            var pixels = frame.ToPixelBuffer();
+
+            AssertSamePixels(expected, pixels);
+        }
+
+        [Fact]
+        public void DecodePlan_WithDither_DecodesToTheGrayTarget()
+        {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
+
+            using var scope = BindPlatform();
+
+            var expected = DecodeThenConvert(FixtureImages.Gradient16Png, null, PixelFormats.Gray4,
+                new PixelConversionOptions { Dither = BitmapDitherMode.ErrorDiffusion });
+
+            using var stream = FixtureImages.Gradient16Png.OpenRead();
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetFormat = PixelFormats.Gray4,
+                Dither = BitmapDitherMode.ErrorDiffusion,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+            var pixels = frame.ToPixelBuffer();
+
+            Assert.Equal(PixelFormats.Gray4, frame.Format);
+            Assert.False(frame.TryGetPalette(out _));
+            AssertSamePixels(expected, pixels);
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(101)]
+        [InlineData(double.NaN)]
+        public void DecodePlan_WithPalette_RejectsAnAlphaThresholdOutOfRange(double threshold)
+        {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
+
+            using var scope = BindPlatform();
+            using var stream = FixtureImages.Gradient16Png.OpenRead();
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetFormat = PixelFormats.Indexed8,
+                Palette = new BitmapPalette(new[] { Colors.Black, Colors.White }),
+                AlphaThresholdPercent = threshold,
+            }));
+        }
+
+        // A decode to straight BGRA, then the conversion a decode with the same options promises to equal.
+        private static PixelBuffer DecodeThenConvert(ImageFixture fixture, PixelSize? size, PixelFormat format,
+            PixelConversionOptions options)
+        {
+            using var stream = fixture.OpenRead();
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetSize = size,
+                TargetFormat = PixelFormats.Bgra8888,
+                TargetAlphaFormat = AlphaFormat.Unpremul,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+            var decoded = frame.ToPixelBuffer();
+
+            return decoded.Convert(format, AlphaFormat.Unpremul, options);
+        }
+
+        private static void AssertSamePixels(PixelBuffer expected, PixelBuffer actual)
+        {
+            Assert.Equal(expected.Size, actual.Size);
+            Assert.Equal(expected.Format, actual.Format);
+
+            var rowBytes = (expected.Size.Width * expected.Format.BitsPerPixel + 7) / 8;
+            var want = new byte[rowBytes * expected.Size.Height];
+            var got = new byte[want.Length];
+
+            expected.CopyPixels(new PixelRect(expected.Size), want, rowBytes, expected.Format, expected.AlphaFormat);
+            actual.CopyPixels(new PixelRect(actual.Size), got, rowBytes, actual.Format, actual.AlphaFormat);
+
+            Assert.Equal(want, got);
         }
 
         [Fact]
