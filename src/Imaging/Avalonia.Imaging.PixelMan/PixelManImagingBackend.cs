@@ -224,7 +224,7 @@ namespace Avalonia.Imaging.PixelMan
                 reducedFrom = info.PixelSize;
             }
 
-            if (hasHeader && TryGetDecodeFormat(codec, storedOrientation, options, out var format))
+            if (TryGetDecodeFormat(options, out var format))
                 decodeOptions.TargetFormat = format;
 
             try
@@ -277,25 +277,18 @@ namespace Avalonia.Imaging.PixelMan
             return true;
         }
 
-        // Asks PixelMan to write the plan's 32-bit RGB target itself when the plan changes
-        // nothing but the format: its decode transform fills the pool rental directly, which
-        // the frame source then adopts, instead of the pipeline converting into a second
-        // frame-sized buffer. Other formats, and plans that crop, scale or reorient, keep
-        // PixelMan's own layout and convert in the pipeline. GIF frames stay indexed for
-        // animation compositing; PixelMan composites WebP animations itself.
-        private static bool TryGetDecodeFormat(PixelManCodecInfo codec, ushort? storedOrientation,
-            BitmapDecodeOptions? options, out PmPixelFormat format)
+        // Asks PixelMan to decode straight into the plan's target format: its decode transform
+        // fills the pool rental directly, instead of PixelMan writing its own layout and the
+        // pipeline converting into a second frame-sized buffer. Cropping, scaling and
+        // reorienting then run on the target format. Indexed targets need a palette, which a
+        // decode does not take, so those keep PixelMan's layout and convert in the pipeline.
+        private static bool TryGetDecodeFormat(BitmapDecodeOptions? options, out PmPixelFormat format)
         {
             format = default;
 
-            if (options is not { TargetFormat: { } target, TargetAlphaFormat: { } alpha, SourceRegion: null, TargetSize: null } ||
-                (options.RespectExifOrientation && storedOrientation is { } value and > 1 and <= 8) ||
-                (codec.Kind != PmCodecKind.Png && codec.Kind != PmCodecKind.Jpeg &&
-                 codec.Kind != PmCodecKind.Bmp && codec.Kind != PmCodecKind.Tiff &&
-                 codec.Kind != PmCodecKind.Webp) ||
-                PixelManFormats.ToPixelMan(target, alpha) is not { } requested ||
-                (requested != PmPixelFormat.Pbgra32 && requested != PmPixelFormat.Bgra32 &&
-                 requested != PmPixelFormat.Prgba32 && requested != PmPixelFormat.Rgba32))
+            if (options is not { TargetFormat: { } target, TargetAlphaFormat: { } alpha } ||
+                target.IsIndexed ||
+                PixelManFormats.ToPixelMan(target, alpha) is not { } requested)
             {
                 return false;
             }
