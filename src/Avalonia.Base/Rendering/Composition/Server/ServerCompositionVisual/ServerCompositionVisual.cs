@@ -111,8 +111,7 @@ namespace Avalonia.Rendering.Composition.Server
             else
             {
                 Root?.RemoveBackdropVisual(this);
-                BackdropCache?.Dispose();
-                BackdropCache = null;
+                ReleaseBackdropCache();
             }
         }
 
@@ -124,8 +123,42 @@ namespace Avalonia.Rendering.Composition.Server
             _registeredAsBackdrop = false;
             PropagateBackdropCountDelta(Parent, -1);
             target.RemoveBackdropVisual(this);
-            BackdropCache?.Dispose();
+            ReleaseBackdropCache();
+        }
+
+        /// <summary>
+        /// Unregistration happens while the compositor applies a batch, outside
+        /// the render pass, where the graphics context the retained resources
+        /// were created on is not current. Freeing GPU resources without it is
+        /// unsafe, so it is made current for the release; when that fails the
+        /// resources are abandoned rather than failing the batch, the same as a
+        /// render target reset.
+        /// </summary>
+        private void ReleaseBackdropCache()
+        {
+            var cache = BackdropCache;
             BackdropCache = null;
+            if (cache == null)
+                return;
+
+            if (cache.PlatformState == null)
+            {
+                cache.Dispose();
+                return;
+            }
+
+            try
+            {
+                using (Compositor.RenderInterface.EnsureCurrent())
+                    cache.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Logging.Logger.TryGet(Logging.LogEventLevel.Error, Logging.LogArea.Visual)?.Log(this,
+                    "Unable to make the render interface current to release a retained backdrop: {Error}", ex);
+                cache.PlatformState = null;
+                cache.Dispose();
+            }
         }
 
         /// <summary>
