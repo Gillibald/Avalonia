@@ -167,19 +167,32 @@ partial class DrawingContextImpl
     private sealed class SkiaBackdropCacheState : IDisposable
     {
         public SkiaBackdropCacheState(GRContext? context, SKSurface surface, SKRectI deviceRect,
-            BackdropCachePayload payload)
+            SKColorType colorType, BackdropCachePayload payload)
         {
             Context = context;
             Surface = surface;
             DeviceRect = deviceRect;
+            ColorType = colorType;
             Payload = payload;
         }
 
         public GRContext? Context { get; }
         public SKSurface Surface { get; }
         public SKImage? Snapshot { get; set; }
-        public SKRectI DeviceRect { get; }
+
+        /// <summary>
+        /// Where the retained pixels sit on the target. A full refresh may move
+        /// it to a rect of the same size: the refresh overwrites every pixel, so
+        /// the surface carries over and only its placement changes.
+        /// </summary>
+        public SKRectI DeviceRect { get; set; }
+
+        public SKColorType ColorType { get; }
         public BackdropCachePayload Payload { get; }
+
+        public bool CanHold(SKRectI deviceRect, SKColorType colorType) =>
+            DeviceRect.Width == deviceRect.Width && DeviceRect.Height == deviceRect.Height
+            && ColorType == colorType;
 
         public void Dispose()
         {
@@ -320,9 +333,9 @@ partial class DrawingContextImpl
             }
             else
             {
-                // Full refresh: reallocate the retained surface when the rect
-                // or context moved on.
-                if (state == null || state.DeviceRect != deviceRect)
+                // Full refresh: reallocate the retained surface only when its
+                // size or format no longer fits; a move just re-places it.
+                if (state == null || !state.CanHold(deviceRect, dest.ColorType))
                 {
                     DropBackdropCache(cache);
                     var info = new SKImageInfo(deviceRect.Width, deviceRect.Height,
@@ -333,8 +346,13 @@ partial class DrawingContextImpl
                     if (surface == null)
                         return false;
 
-                    state = new SkiaBackdropCacheState(_grContext, surface, deviceRect, cache.Payload);
+                    state = new SkiaBackdropCacheState(_grContext, surface, deviceRect, dest.ColorType,
+                        cache.Payload);
                     cache.PlatformState = state;
+                }
+                else
+                {
+                    state.DeviceRect = deviceRect;
                 }
 
                 if (cache.Payload == BackdropCachePayload.Input)
