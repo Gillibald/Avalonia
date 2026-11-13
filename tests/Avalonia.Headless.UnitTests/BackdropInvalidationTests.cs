@@ -275,6 +275,85 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
+    public void Glass_With_Its_Own_Bitmap_Cache_Filters_The_Content_Behind_It()
+    {
+        AssertCachedGlassMatchesUncached(1);
+        AssertCachedGlassMatchesUncached(0.6);
+    }
+
+    private static void AssertCachedGlassMatchesUncached(double opacity)
+    {
+        // The glass's cache holds its own content, which paints above the
+        // sample point; the backdrop still filters what lies beneath the glass
+        // in the surface the cache is composited onto. Each state is compared
+        // with the same scene rendered without the cache.
+        (Window Window, Border Behind) BuildScene(IBrush behindBrush, bool cached)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            var behind = new Border
+            {
+                Background = behindBrush, Width = 80, Height = 60,
+                [Canvas.LeftProperty] = 50.0, [Canvas.TopProperty] = 60.0
+            };
+            host.Children.Add(behind);
+            host.Children.Add(new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(6),
+                CacheMode = cached ? new BitmapCache() : null,
+                Opacity = opacity,
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            });
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, behind);
+        }
+
+        // Per pixel, not a mean: a blur keeps a region's mean colour, so only
+        // the edges of the content behind tell filtered from unfiltered.
+        var (window, behind) = BuildScene(Brushes.Crimson, cached: true);
+        var (plain, _) = BuildScene(Brushes.Crimson, cached: false);
+        var first = MaxPixelDifference(window, plain, PanelRect);
+
+        behind.Background = Brushes.DodgerBlue;
+        Dispatcher.UIThread.RunJobs();
+        var (plainToggled, _) = BuildScene(Brushes.DodgerBlue, cached: false);
+        var toggled = MaxPixelDifference(window, plainToggled, PanelRect);
+
+        AssertHelper.True(first <= 2 && toggled <= 2,
+            $"A cached glass at opacity {opacity} diverged from the same glass without a cache: " +
+            $"{first} initially, {toggled} after the content behind it changed.");
+    }
+
+    private static int MaxPixelDifference(Window a, Window b, Rect area)
+    {
+        using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
+        using var fb = b.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
+        using var la = fa.Lock();
+        using var lb = fb.Lock();
+        var bytesA = new byte[la.RowBytes * la.Size.Height];
+        var bytesB = new byte[lb.RowBytes * lb.Size.Height];
+        System.Runtime.InteropServices.Marshal.Copy(la.Address, bytesA, 0, bytesA.Length);
+        System.Runtime.InteropServices.Marshal.Copy(lb.Address, bytesB, 0, bytesB.Length);
+
+        var worst = 0;
+        for (var y = (int)area.Y; y < (int)area.Bottom; y++)
+        for (var x = (int)area.X; x < (int)area.Right; x++)
+        for (var c = 0; c < 4; c++)
+            worst = Math.Max(worst, Math.Abs(bytesA[y * la.RowBytes + x * 4 + c] - bytesB[y * lb.RowBytes + x * 4 + c]));
+        return worst;
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
     public void Pointwise_Backdrop_Partial_Redraws_Match_A_Fresh_Render()
     {
         // An inverting backdrop repaints only the changed slice beneath it.
