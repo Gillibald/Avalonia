@@ -50,7 +50,8 @@ Comments in these files use the first term. Older words, still found in comments
 - **backdrop**: the pixels already in the layer behind a visual when it is drawn.
 - **backdrop visual** ('glass'): a visual with a `BackdropEffect`. The effect fills its backdrop region, then the visual's content and children draw on top.
 - **backdrop region**: what the effect fills, in local space (`BackdropRegion`): the layout rect or the subtree bounds per `BackdropEffectBoundsSource`, shaped by `BackdropClip`.
-- **reach**: how far the effect reads past an output pixel (`GetEffectOutputPadding`). **Input area** is the region inflated by it.
+- **read reach** ('reach'): how far, per side, the effect reads past an output pixel (`GetEffectReadReach`). **Input area** is the region inflated by it.
+- **influence**: how far, per side, a changed input pixel can move the output (`GetEffectInfluence`); the read reach mirrors it. Neither is the output padding: erosion and lighting pad nothing but read neighbors, and an offset pads the side it moves toward while reading from the other.
 - **pointwise**: an effect whose output pixel reads only the input pixel beneath it (`IsPointwise`). It needs no reach and no retention.
 - **classification** ('capture'): the update walk records each backdrop visual at its draw-order position (`BackdropCapture`). Dirty rects already in the working set there are behind it and change its input; later ones are in front and do not. Backdrop visuals the walk never reached are classified afterwards from a journal of dirty rects and the visuals that collected them.
 - **payload**: what a backdrop visual retains between frames (`BackdropCachePayload`): its filtered **output**, its unfiltered **input**, or **none**.

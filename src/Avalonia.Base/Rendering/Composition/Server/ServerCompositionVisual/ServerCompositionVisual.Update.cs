@@ -127,10 +127,10 @@ internal partial class ServerCompositionVisual
                 && LtrbRect.FullUnion(oldBounds, node._subTreeBounds) is { } outputExtent)
             {
                 // Everything the effect's output can have changed in: the
-                // changed input plus the filter's reach, clamped to the output
-                // extent the effect could have painted in either frame.
+                // changed input plus how far a change spreads, clamped to the
+                // output extent the effect could have painted in either frame.
                 AddToDirtyRegion(
-                    changed.Inflate(node.Effect!.GetEffectOutputPadding()).IntersectOrNull(outputExtent));
+                    changed.Inflate(node.Effect!.GetEffectInfluence()).IntersectOrNull(outputExtent));
             }
 
             union.Union = null;
@@ -398,7 +398,7 @@ internal partial class ServerCompositionVisual
             }
             else
             {
-                var area = hostBounds.Inflate(node.BackdropEffect.GetEffectOutputPadding());
+                var area = hostBounds.Inflate(node.BackdropEffect.GetEffectReadReach());
                 belowDirt = false;
                 var buffer = _workingSetBuffer ??= new List<LtrbRect>();
                 buffer.Clear();

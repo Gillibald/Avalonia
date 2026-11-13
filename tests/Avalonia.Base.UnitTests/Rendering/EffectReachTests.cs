@@ -64,6 +64,21 @@ public class EffectReachTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Read_Reach_Mirrors_How_Far_A_Change_Spreads()
+    {
+        Assert.Equal(default, Erode.GetEffectOutputPadding());
+        Assert.Equal(new Thickness(3), Erode.GetEffectInfluence());
+        Assert.Equal(new Thickness(3), Erode.GetEffectReadReach());
+
+        Assert.Equal(new Thickness(0, 0, 5, 0), ShiftRight.GetEffectInfluence());
+        Assert.Equal(new Thickness(5, 0, 0, 0), ShiftRight.GetEffectReadReach());
+
+        var blur = new ImmutableBlurEffect(4);
+        Assert.Equal(blur.GetEffectOutputPadding(), blur.GetEffectInfluence());
+        Assert.Equal(blur.GetEffectOutputPadding(), blur.GetEffectReadReach());
+    }
+
+    [Fact]
     public void Partial_Refresh_Of_An_Eroding_Backdrop_Repaints_What_The_Refilter_Reads()
     {
         using var s = new CompositorCanvas();

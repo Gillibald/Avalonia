@@ -382,8 +382,8 @@ partial class DrawingContextImpl
     /// </summary>
     private static int BackdropInputMargin(IEffect effect, SKMatrix ctm)
     {
-        var padding = effect.GetEffectOutputPadding();
-        var reach = Math.Max(Math.Max(padding.Left, padding.Right), Math.Max(padding.Top, padding.Bottom));
+        var readReach = effect.GetEffectReadReach();
+        var reach = Math.Max(Math.Max(readReach.Left, readReach.Right), Math.Max(readReach.Top, readReach.Bottom));
         var scale = Math.Max(
             Math.Sqrt(ctm.ScaleX * ctm.ScaleX + ctm.SkewY * ctm.SkewY),
             Math.Sqrt(ctm.SkewX * ctm.SkewX + ctm.ScaleY * ctm.ScaleY));

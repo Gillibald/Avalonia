@@ -452,11 +452,11 @@ namespace Avalonia.Rendering.Composition.Server
 
             // Once the changed output approaches the whole box a full refresh
             // is both cheaper and simpler, whatever is retained.
-            var padding = effect.GetEffectOutputPadding();
+            var influence = effect.GetEffectInfluence();
             LtrbRect? union = null;
             foreach (var dirt in _partialDirtScratch)
             {
-                var output = dirt.Inflate(padding).IntersectOrEmpty(box);
+                var output = dirt.Inflate(influence).IntersectOrEmpty(box);
                 if (!output.IsZeroSize)
                     union = LtrbRect.FullUnion(union, output);
             }
@@ -503,10 +503,11 @@ namespace Avalonia.Rendering.Composition.Server
             }
 
             var input = cache.Payload == BackdropCachePayload.Input;
-            var padding = effect.GetEffectOutputPadding();
+            var influence = effect.GetEffectInfluence();
+            var readReach = effect.GetEffectReadReach();
             foreach (var dirt in _partialDirtScratch)
             {
-                var output = dirt.Inflate(padding).IntersectOrEmpty(box);
+                var output = dirt.Inflate(influence).IntersectOrEmpty(box);
                 if (input)
                 {
                     var ingest = dirt.IntersectOrEmpty(inputArea);
@@ -518,7 +519,7 @@ namespace Avalonia.Rendering.Composition.Server
                     cache.RefreshRects.Add(output.TransformToAABB(hostToLocal).ToRect());
                 }
 
-                var repaint = input ? output : output.Inflate(padding).IntersectOrEmpty(inputArea);
+                var repaint = input ? output : output.Inflate(readReach).IntersectOrEmpty(inputArea);
                 if (repaint.IsZeroSize)
                     continue;
                 var covered = false;
@@ -559,7 +560,7 @@ namespace Avalonia.Rendering.Composition.Server
             var dirtOverflow = false;
             if (bounds is { } hostBounds && visual.BackdropEffect is { } effect)
             {
-                var area = hostBounds.Inflate(effect.GetEffectOutputPadding());
+                var area = hostBounds.Inflate(effect.GetEffectReadReach());
                 foreach (var entry in _backdropJournal)
                 {
                     if (!ReferenceEquals(entry.Host, hostCollector) || !entry.Rect.Intersects(area))
@@ -832,7 +833,7 @@ namespace Avalonia.Rendering.Composition.Server
                         continue;
                     var cacheable = capture.Cacheable && !rootUsesLayer;
 
-                    var area = bounds.Inflate(effect.GetEffectOutputPadding());
+                    var area = bounds.Inflate(effect.GetEffectReadReach());
                     if (isRootHost)
                         area = area.IntersectOrEmpty(surface);
                     if (area.IsZeroSize)
