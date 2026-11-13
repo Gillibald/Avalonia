@@ -17,6 +17,7 @@ namespace Avalonia.Base.UnitTests.Rendering;
 public class EffectReachTests : CompositorTestsBase
 {
     private static readonly IEffect Erode = new ImmutableMorphologyEffect(3, 3, dilate: false, input: null);
+    private static readonly IEffect ShiftRight = new ImmutableOffsetEffect(5, 0);
 
     private static Rect? DirtyUnion(CompositorTestServices s)
     {
@@ -26,6 +27,18 @@ public class EffectReachTests : CompositorTestsBase
             union = union is { } u ? u.Union(rect) : rect;
         s.Events.Rects.Clear();
         return union;
+    }
+
+    [Fact]
+    public void Influence_Is_How_Far_A_Change_Spreads()
+    {
+        Assert.Equal(default, Erode.GetEffectOutputPadding());
+        Assert.Equal(new Thickness(3), Erode.GetEffectInfluence());
+
+        Assert.Equal(new Thickness(0, 0, 5, 0), ShiftRight.GetEffectInfluence());
+
+        var blur = new ImmutableBlurEffect(4);
+        Assert.Equal(blur.GetEffectOutputPadding(), blur.GetEffectInfluence());
     }
 
     [Fact]

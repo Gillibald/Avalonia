@@ -142,9 +142,72 @@ public static class EffectExtensions
     }
 
     /// <summary>
+    /// How far, per side, a change to one input pixel can move the effect's
+    /// output: a changed region inflated by this bounds every output pixel
+    /// that can differ. Mostly the same as the output padding, but erosion
+    /// and lighting add no padding while their output still depends on the
+    /// neighborhood around each pixel.
+    /// </summary>
+    internal static Thickness GetEffectInfluence(this IEffect? effect)
+    {
+        switch (effect)
+        {
+            case null:
+                return default;
+            case IMorphologyEffect morphology:
+                // Dilation and erosion both take each output pixel from the
+                // whole radius around it.
+                return morphology.Input.GetEffectInfluence()
+                       + new Thickness(morphology.RadiusX, morphology.RadiusY, morphology.RadiusX, morphology.RadiusY);
+            case ILightingEffect lighting:
+                // Surface normals come from the pixel's 3x3 neighborhood.
+                return lighting.Input.GetEffectInfluence() + new Thickness(1);
+            case IComponentTransferEffect componentTransfer:
+                return componentTransfer.Input.GetEffectInfluence();
+            case ICropEffect crop:
+                return crop.Input.GetEffectInfluence();
+            case ICompositeEffect composite:
+            {
+                var total = default(Thickness);
+                foreach (var child in composite.Children)
+                    total += child.GetEffectInfluence();
+                return total;
+            }
+            case IMergeEffect merge:
+            {
+                var total = default(Thickness);
+                foreach (var input in merge.Inputs)
+                    total = MaxOf(total, input.GetEffectInfluence());
+                return total;
+            }
+            case IBlendEffect blend:
+                return MaxOf(blend.Background.GetEffectInfluence(), blend.Foreground.GetEffectInfluence());
+            case IArithmeticCompositeEffect arithmetic:
+                return MaxOf(arithmetic.Background.GetEffectInfluence(), arithmetic.Foreground.GetEffectInfluence());
+            case IAnisotropicBlurEffect anisotropicBlur:
+            {
+                var padX = AdjustPaddingRadius(anisotropicBlur.RadiusX);
+                var padY = AdjustPaddingRadius(anisotropicBlur.RadiusY);
+                return anisotropicBlur.Input.GetEffectInfluence() + new Thickness(padX, padY, padX, padY);
+            }
+            case IConvolveMatrixEffect convolve:
+                return convolve.Input.GetEffectInfluence()
+                       + new Thickness(convolve.OrderX, convolve.OrderY, convolve.OrderX, convolve.OrderY);
+            default:
+                return effect.GetEffectOutputPadding();
+        }
+
+        static Thickness MaxOf(Thickness a, Thickness b) => new(
+            Math.Max(a.Left, b.Left),
+            Math.Max(a.Top, b.Top),
+            Math.Max(a.Right, b.Right),
+            Math.Max(a.Bottom, b.Bottom));
+    }
+
+    /// <summary>
     /// Whether the effect is input-local: an input change at a point can only
-    /// alter output within <see cref="GetEffectOutputPadding"/> of that point,
-    /// so a changed region plus the padding bounds everything the output can
+    /// alter output within <see cref="GetEffectInfluence"/> of that point,
+    /// so a changed region plus that influence bounds everything the output can
     /// differ in. A tile replicates a source region across its whole
     /// destination - a local input change can move output anywhere - and
     /// unknown effects are conservatively non-local. Mirrors the recursion
