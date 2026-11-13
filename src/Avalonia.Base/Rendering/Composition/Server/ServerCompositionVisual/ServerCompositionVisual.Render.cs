@@ -154,7 +154,33 @@ partial class ServerCompositionVisual
                 // If caching is enabled, draw from cache and skip rendering
                 if (visual.Cache != null)
                 {
+                    // The cache texture holds the visual's own content, which
+                    // paints above the sample point, so the backdrop is drawn
+                    // here, on the surface the texture composites onto, and left
+                    // out of the texture. The visual's opacity mask is part of
+                    // the texture and does not reach the backdrop.
+                    var cachedOpacity = DefersOwnOpacity(visual);
+                    if (DrawsBackdrop(visual))
+                    {
+                        var box = new Rect(0, 0, visual.Size.X, visual.Size.Y);
+                        var layers = (IDrawingContextImplWithLayers)_canvas;
+                        layers.PushLayer(new Avalonia.Media.LayerOptions
+                        {
+                            Bounds = box,
+                            BackdropEffect = visual.BackdropEffect,
+                            BackdropBounds = box,
+                            BackdropClipImpl = visual.BackdropClip,
+                            BackdropCache = visual.BackdropCache,
+                            Opacity = cachedOpacity ? visual.Opacity : null
+                        });
+                        layers.PopLayer();
+                    }
+
+                    if (cachedOpacity)
+                        _canvas.PushOpacity(visual.Opacity, visual._subTreeBounds!.Value.ToRect());
                     var (visited, rendered) = visual.Cache.Draw(_canvas);
+                    if (cachedOpacity)
+                        _canvas.PopOpacity();
                     VisitedVisuals += visited;
                     RenderedVisuals += rendered;
                     _usedCache = true;
@@ -303,14 +329,20 @@ partial class ServerCompositionVisual
         /// whenever it is applied as one, so for a backdrop visual the opacity is
         /// opened right after the backdrop, inside the visual's transform and
         /// clips, and the backdrop is composited at that opacity itself. A
-        /// cached visual draws from its bitmap instead and keeps the usual order.
+        /// cached visual does the same around drawing its bitmap.
         /// </summary>
         private static bool DefersOwnOpacity(ServerCompositionVisual visual) =>
-            visual.Opacity != 1 && visual.BackdropEffect != null && visual.Cache == null;
+            visual.Opacity != 1 && visual.BackdropEffect != null;
 
+        /// <summary>
+        /// Whether the backdrop is drawn in this walk. Rendering a visual's own
+        /// bitmap cache leaves its backdrop out: there is nothing beneath it in
+        /// the texture, and the walk that composites the texture draws it.
+        /// </summary>
         private bool DrawsBackdrop(ServerCompositionVisual visual) =>
             visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
-            && _canvas is IDrawingContextImplWithLayers;
+            && _canvas is IDrawingContextImplWithLayers
+            && !(_renderingToBitmapCache && visual == _rootVisual);
 
         /// <summary>
         /// The visual's own opacity mask covers its backdrop too, so the two
