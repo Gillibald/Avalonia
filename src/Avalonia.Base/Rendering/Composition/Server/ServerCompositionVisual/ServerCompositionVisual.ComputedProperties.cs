@@ -110,6 +110,18 @@ partial class ServerCompositionVisual
         _needsToAddExtraDirtyRectToDirtyRegion = !dirtyForRender && (_needsToAddExtraDirtyRectToDirtyRegion || additionalDirtyRegion);
     }
     
+    /// <summary>
+    /// A backdrop fills the visual's box even where its content paints
+    /// nothing, so the box counts as painted: culling, the old and new extent
+    /// a move repaints, and the subtree bounds all have to include it. A
+    /// subtree-bounded backdrop fills only what the subtree paints already.
+    /// </summary>
+    private LtrbRect? WithBackdropBox(LtrbRect? content) =>
+        BackdropEffect != null && BackdropEffectBoundsSource == BackdropEffectBoundsSource.Layout
+                               && Size.X > 0 && Size.Y > 0
+            ? LtrbRect.FullUnion(content, new LtrbRect(0, 0, Size.X, Size.Y))
+            : content;
+
     public void RecomputeOwnProperties()
     {
         var setDirtyBounds = _contentChanged || _delayPropagateNeedsBoundsUpdate;
@@ -123,7 +135,7 @@ partial class ServerCompositionVisual
         _enqueuedForOwnPropertiesRecompute = false;
         if (_ownBoundsDirty)
         {
-            _ownContentBounds = ComputeOwnContentBounds()?.NullIfZeroSize();
+            _ownContentBounds = WithBackdropBox(ComputeOwnContentBounds())?.NullIfZeroSize();
             setDirtyForRender = setDirtyBounds = true;
         }
 

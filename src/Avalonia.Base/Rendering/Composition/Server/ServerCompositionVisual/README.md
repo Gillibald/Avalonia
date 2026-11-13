@@ -72,6 +72,7 @@ Comments in these files use the first term. Older words, still found in comments
 
 - The filter runs only on a frame whose dirty region covers its whole input. Anything left unpainted holds last frame's output, which already contains the backdrop, and filtering it again smears. Every shortcut below keeps this.
 - The effect reads real layer content up to its reach past the region, so content just outside tints the glass edge. That ring is part of the input area and is tracked like the rest of it.
+- A layout-bounded backdrop visual's box counts as its own content bounds, painted or not. Culling, and the old and new extent a move or resize repaints, therefore cover the whole fill.
 - A dirty rect in front of a backdrop visual never invalidates its retained payload.
 - Retention never changes pixels. A backdrop visual under an intermediate layer, with its own opacity mask, or on a root layer without a readable surface, retains nothing and samples live; it still renders.
 - A pointwise effect sampled live widens nothing: the redrawn slice is its own input.

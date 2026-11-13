@@ -86,12 +86,6 @@ partial class ServerCompositionVisual
                 effectiveClip = effectiveClip.IntersectOrEmpty(visual._ownClipRect.Value.TransformToAABB(effectiveNewTransform));
 
             var worldBounds = visual._transformedSubTreeBounds.Value.TransformToAABB(_walkContext.Transform);
-            if (visual.BackdropEffect != null && visual.BackdropRegion is { } region)
-            {
-                // The backdrop fill covers the control's box even where the
-                // subtree paints nothing, so culling has to account for it.
-                worldBounds = LtrbRect.FullUnion(worldBounds, region.TransformToAABB(effectiveNewTransform))!.Value;
-            }
             if (!effectiveClip.Intersects(worldBounds)
                 || (_effectInputDepth == 0 && _dirtyRects?.Intersects(worldBounds) == false))
                 return false;

@@ -518,6 +518,47 @@ public class BackdropInvalidationTests
             $"After moving, the glass differed by {difference} from a fresh render.");
     }
 
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Glass_Without_Any_Content_Still_Filters_Its_Box()
+    {
+        // Like CSS backdrop-filter on an element with a transparent
+        // background: the box is filtered although the control draws nothing.
+        Window BuildScene(bool glass)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            for (var x = 10; x < 190; x += 12)
+            {
+                host.Children.Add(new Border
+                {
+                    Background = Brushes.Black, Width = 4, Height = 120,
+                    [Canvas.LeftProperty] = (double)x, [Canvas.TopProperty] = 40.0
+                });
+            }
+
+            if (glass)
+            {
+                host.Children.Add(new Border
+                {
+                    Width = PanelRect.Width, Height = PanelRect.Height,
+                    BackdropEffect = new ImmutableBlurEffect(6),
+                    [Canvas.LeftProperty] = PanelRect.X, [Canvas.TopProperty] = PanelRect.Y
+                });
+            }
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return window;
+        }
+
+        var filtered = MaxPixelDifference(BuildScene(glass: true), BuildScene(glass: false), PanelRect);
+        AssertHelper.True(filtered > 64, $"An empty glass left its box unfiltered (difference {filtered}).");
+    }
+
     private static int MaxPixelDifference(Window a, Window b, Rect area) =>
         RenderedFrame.MaxDifference(a, b, area);
 

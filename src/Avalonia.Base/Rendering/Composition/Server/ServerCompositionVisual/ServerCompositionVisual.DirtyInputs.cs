@@ -25,7 +25,9 @@ partial class ServerCompositionVisual
         | CompositionVisualChangedFields.ClipToBoundsAnimated
         | CompositionVisualChangedFields.Size
         | CompositionVisualChangedFields.SizeAnimated
-        | CompositionVisualChangedFields.Effect;
+        | CompositionVisualChangedFields.Effect
+        | CompositionVisualChangedFields.BackdropEffect
+        | CompositionVisualChangedFields.BackdropEffectBoundsSource;
 
     private const CompositionVisualChangedFields CombinedTransformFieldsMask =
         CompositionVisualChangedFields.Size

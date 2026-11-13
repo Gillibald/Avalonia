@@ -317,10 +317,10 @@ namespace Avalonia
         /// </summary>
         /// <remarks>
         /// <para>
-        /// The control must paint something for the result to show - a translucent
-        /// background is enough, but a fully transparent control composites to
-        /// nothing. Requires a backend whose drawing context supports layers;
-        /// others ignore it.
+        /// The filtered backdrop fills the region whether or not the control
+        /// paints anything there; its own content and children draw on top, and a
+        /// translucent background gives the frosted look. Requires a backend whose
+        /// drawing context supports layers; others ignore it.
         /// </para>
         /// <para>
         /// By default the filtered result is confined to the control's bounds,
