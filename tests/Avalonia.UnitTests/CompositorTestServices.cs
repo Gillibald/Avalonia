@@ -34,7 +34,8 @@ public class CompositorTestServices : IDisposable
         _app.Dispose();
     }
 
-    public CompositorTestServices(Size? size = null, IPlatformRenderInterface? renderInterface = null)
+    public CompositorTestServices(Size? size = null, IPlatformRenderInterface? renderInterface = null,
+        IPlatformGraphics? graphics = null)
     {
         var services = TestServices.MockPlatformRenderInterface;
         if (renderInterface != null)
@@ -46,7 +47,7 @@ public class CompositorTestServices : IDisposable
             var renderLoop = RenderLoop.FromTimer(Timer);
             AvaloniaLocator.CurrentMutable.Bind<IRenderLoop>().ToConstant(renderLoop);
 
-            Compositor = new Compositor(renderLoop, null,
+            Compositor = new Compositor(renderLoop, graphics,
                 true, new DispatcherCompositorScheduler(), true, Dispatcher.UIThread);
             var impl = new TopLevelImpl(Compositor, size ?? new Size(1000, 1000));
             TopLevel = new EmbeddableControlRoot(impl)
