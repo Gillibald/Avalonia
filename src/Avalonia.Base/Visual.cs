@@ -95,6 +95,12 @@ namespace Avalonia
             AvaloniaProperty.Register<Visual, Geometry?>(nameof(BackdropClip));
 
         /// <summary>
+        /// Defines the <see cref="BackdropEffectBoundsSource"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BackdropEffectBoundsSource> BackdropEffectBoundsSourceProperty =
+            AvaloniaProperty.Register<Visual, BackdropEffectBoundsSource>(nameof(BackdropEffectBoundsSource));
+
+        /// <summary>
         /// Defines the <see cref="BackdropEffectCache"/> property.
         /// </summary>
         public static readonly StyledProperty<BackdropEffectCache?> BackdropEffectCacheProperty =
@@ -166,6 +172,7 @@ namespace Avalonia
                 EffectProperty,
                 BackdropEffectProperty,
                 BackdropClipProperty,
+                BackdropEffectBoundsSourceProperty,
                 BackdropEffectCacheProperty,
                 HasMirrorTransformProperty);
             RenderTransformProperty.Changed.Subscribe(RenderTransformChanged);
@@ -316,11 +323,13 @@ namespace Avalonia
         /// others ignore it.
         /// </para>
         /// <para>
-        /// The filtered result is confined to the control's bounds, refined by its
-        /// <see cref="Clip"/> - the control's own box, like CSS, never the extent
-        /// of what it happens to paint. Children overflowing the control and
-        /// effect output such as a drop shadow fall on the unfiltered background,
-        /// and a control without a size shows no backdrop at all.
+        /// By default the filtered result is confined to the control's bounds,
+        /// refined by its <see cref="Clip"/> - the control's own box, like CSS,
+        /// never the extent of what it happens to paint. Children overflowing the
+        /// control and effect output such as a drop shadow fall on the unfiltered
+        /// background, and a control without a size shows no backdrop at all.
+        /// <see cref="BackdropEffectBoundsSource"/> extends the region to
+        /// everything the subtree paints instead.
         /// </para>
         /// <para>
         /// Shaped panels shape themselves: a Border feeds a rounded rectangle
@@ -358,6 +367,20 @@ namespace Avalonia
         /// a Border supplies its rounded rectangle.
         /// </summary>
         internal virtual Geometry? EffectiveBackdropClip => BackdropClip;
+
+        /// <summary>
+        /// Gets or sets which region the <see cref="BackdropEffect"/> fills: the
+        /// control's own layout bounds (the default) or the bounds of everything
+        /// its subtree paints. In <see cref="Media.BackdropEffectBoundsSource.Subtree"/>
+        /// mode only an explicit <see cref="BackdropClip"/> shapes the region;
+        /// the shape a control declares for its own box, such as a Border's
+        /// rounded corners, does not apply.
+        /// </summary>
+        public BackdropEffectBoundsSource BackdropEffectBoundsSource
+        {
+            get => GetValue(BackdropEffectBoundsSourceProperty);
+            set => SetValue(BackdropEffectBoundsSourceProperty, value);
+        }
 
         /// <summary>
         /// Gets or sets how the content behind the <see cref="BackdropEffect"/>

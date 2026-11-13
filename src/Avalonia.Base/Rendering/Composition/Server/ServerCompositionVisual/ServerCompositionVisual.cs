@@ -162,6 +162,24 @@ namespace Avalonia.Rendering.Composition.Server
         }
 
         /// <summary>
+        /// The rect a backdrop on this visual fills, in its local space, before
+        /// clips: the visual's own box by default, so overflowing children and
+        /// effect output do not widen it, or the bounds of everything its
+        /// subtree paints when the bounds source asks for that. Null when there
+        /// is nothing to fill.
+        /// </summary>
+        internal LtrbRect? BackdropRegion
+        {
+            get
+            {
+                var region = BackdropEffectBoundsSource == BackdropEffectBoundsSource.Subtree
+                    ? _subTreeBounds
+                    : new LtrbRect(0, 0, Size.X, Size.Y);
+                return region is { IsZeroSize: false } ? region : null;
+            }
+        }
+
+        /// <summary>
         /// This visual's bounds in the target's coordinate space, or null when it
         /// contributes nothing. The update walk only descends into dirty subtrees,
         /// so a backdrop that did not itself change is never visited and its world
@@ -210,12 +228,11 @@ namespace Avalonia.Rendering.Composition.Server
             if (_transformedSubTreeBounds == null || !Visible)
                 return null;
 
-            // The backdrop region is the control's own box refined by its clip
-            // - never the subtree's paint union - so overflowing children and
-            // effect output do not widen it. Mapped to the parent's space
-            // first; each ancestor then clips in its own space and maps up one
-            // level.
-            var rect = new LtrbRect(0, 0, Size.X, Size.Y);
+            // The backdrop region refined by the visual's own clip, mapped to
+            // the parent's space first; each ancestor then clips in its own
+            // space and maps up one level.
+            if (BackdropRegion is not { } rect)
+                return null;
             if (_ownClipRect.HasValue)
                 rect = rect.IntersectOrEmpty(_ownClipRect.Value);
             if (rect.IsZeroSize)

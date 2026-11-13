@@ -330,6 +330,73 @@ public class BackdropInvalidationTests
             $"{first} initially, {toggled} after the content behind it changed.");
     }
 
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Subtree_Backdrop_On_A_Size_Less_Container_Matches_A_Sized_One()
+    {
+        // A container without a size of its own has no layout box to fill; in
+        // subtree mode it fills what its children paint. Its pixels match a
+        // container sized to exactly that extent. A child then moves, and the
+        // partial frame still matches a fresh render of the new layout.
+        var stripes = new Rect(30, 40, 140, 120);
+
+        (Window Window, Border Child) BuildScene(bool sized, double childLeft)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            for (var x = stripes.X; x < stripes.Right; x += 12)
+            {
+                host.Children.Add(new Border
+                {
+                    Background = Brushes.Black, Width = 4, Height = stripes.Height,
+                    [Canvas.LeftProperty] = x, [Canvas.TopProperty] = stripes.Y
+                });
+            }
+
+            var container = new Canvas
+            {
+                BackdropEffect = new ImmutableBlurEffect(6),
+                BackdropEffectBoundsSource = sized ? BackdropEffectBoundsSource.Layout : BackdropEffectBoundsSource.Subtree,
+                [Canvas.LeftProperty] = 50.0,
+                [Canvas.TopProperty] = 60.0
+            };
+            if (sized)
+            {
+                container.Width = childLeft + 60;
+                container.Height = 60;
+            }
+
+            var wash = new ImmutableSolidColorBrush(Colors.White, 0.25);
+            container.Children.Add(new Border { Background = wash, Width = 60, Height = 60 });
+            var child = new Border
+            {
+                Background = wash, Width = 60, Height = 60, [Canvas.LeftProperty] = childLeft
+            };
+            container.Children.Add(child);
+            host.Children.Add(container);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, child);
+        }
+
+        var area = new Rect(50, 60, 100, 60);
+        var (window, child) = BuildScene(sized: false, childLeft: 30);
+        var (reference, _) = BuildScene(sized: true, childLeft: 30);
+        var initial = MaxPixelDifference(window, reference, area);
+
+        Canvas.SetLeft(child, 40);
+        Dispatcher.UIThread.RunJobs();
+        var (movedReference, _) = BuildScene(sized: true, childLeft: 40);
+        var moved = MaxPixelDifference(window, movedReference, new Rect(50, 60, 100, 60));
+
+        AssertHelper.True(initial <= 2 && moved <= 2,
+            $"A size-less subtree backdrop diverged from a sized one: {initial} initially, {moved} after a move.");
+    }
+
     private static int MaxPixelDifference(Window a, Window b, Rect area)
     {
         using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");

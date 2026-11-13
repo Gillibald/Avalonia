@@ -208,6 +208,17 @@ internal partial class ServerCompositionVisual
             if (node is { _needsBoundingBoxUpdate: true, OpacityMaskBrush: not null })
                 node._isDirtyForRender = true;
 
+            // A subtree-bounded backdrop fills its subtree's paint bounds, so a
+            // change that may move them may move the glass: repaint its old
+            // extent now and its new one at PostSubgraph, both beneath anything
+            // the subtree paints.
+            if (node is
+                {
+                    _needsBoundingBoxUpdate: true, _registeredAsBackdrop: true,
+                    BackdropEffectBoundsSource: BackdropEffectBoundsSource.Subtree
+                })
+                node._isDirtyForRender = true;
+
             // Classify this backdrop's frame before any of this node's own or
             // descendant damage is emitted: everything already in the working
             // set painted at or beneath the sample point, everything later

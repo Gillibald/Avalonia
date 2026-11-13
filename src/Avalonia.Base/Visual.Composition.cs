@@ -154,7 +154,13 @@ public partial class Visual
         if (!comp.BackdropEffect.EffectEquals(BackdropEffect))
             comp.BackdropEffect = BackdropEffect?.ToImmutable();
 
-        comp.BackdropClip = EffectiveBackdropClip?.PlatformImpl;
+        var boundsSource = BackdropEffectBoundsSource;
+        comp.BackdropEffectBoundsSource = boundsSource;
+        // The shape a control declares describes its own box, which a subtree
+        // region extends past; only an explicit clip shapes that.
+        comp.BackdropClip = (boundsSource == BackdropEffectBoundsSource.Subtree
+            ? BackdropClip
+            : EffectiveBackdropClip)?.PlatformImpl;
         comp.BackdropCacheHint = BackdropEffectCache?.Hint ?? BackdropCacheHint.Auto;
 
         comp.RenderOptions = RenderOptions;

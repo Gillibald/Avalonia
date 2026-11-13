@@ -86,13 +86,11 @@ partial class ServerCompositionVisual
                 effectiveClip = effectiveClip.IntersectOrEmpty(visual._ownClipRect.Value.TransformToAABB(effectiveNewTransform));
 
             var worldBounds = visual._transformedSubTreeBounds.Value.TransformToAABB(_walkContext.Transform);
-            if (visual.BackdropEffect != null)
+            if (visual.BackdropEffect != null && visual.BackdropRegion is { } region)
             {
                 // The backdrop fill covers the control's box even where the
                 // subtree paints nothing, so culling has to account for it.
-                var box = new LtrbRect(0, 0, visual.Size.X, visual.Size.Y)
-                    .TransformToAABB(effectiveNewTransform);
-                worldBounds = LtrbRect.FullUnion(worldBounds, box)!.Value;
+                worldBounds = LtrbRect.FullUnion(worldBounds, region.TransformToAABB(effectiveNewTransform))!.Value;
             }
             if (!effectiveClip.Intersects(worldBounds)
                 || (_effectInputDepth == 0 && _dirtyRects?.Intersects(worldBounds) == false))
@@ -162,7 +160,7 @@ partial class ServerCompositionVisual
                     var cachedOpacity = DefersOwnOpacity(visual);
                     if (DrawsBackdrop(visual))
                     {
-                        var box = new Rect(0, 0, visual.Size.X, visual.Size.Y);
+                        var box = visual.BackdropRegion!.Value.ToRect();
                         var layers = (IDrawingContextImplWithLayers)_canvas;
                         layers.PushLayer(new Avalonia.Media.LayerOptions
                         {
@@ -212,7 +210,7 @@ partial class ServerCompositionVisual
             var defersOpacity = !bitmapCacheRoot && DefersOwnOpacity(visual);
             if (DrawsBackdrop(visual))
             {
-                var box = new Rect(0, 0, visual.Size.X, visual.Size.Y);
+                var box = visual.BackdropRegion!.Value.ToRect();
                 ((IDrawingContextImplWithLayers)_canvas).PushLayer(new Avalonia.Media.LayerOptions
                 {
                     Bounds = masksBackdrop ? visual._subTreeBounds!.Value.ToRect() : box,
@@ -340,7 +338,7 @@ partial class ServerCompositionVisual
         /// the texture, and the walk that composites the texture draws it.
         /// </summary>
         private bool DrawsBackdrop(ServerCompositionVisual visual) =>
-            visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
+            visual.BackdropEffect != null && visual.BackdropRegion != null
             && _canvas is IDrawingContextImplWithLayers
             && !(_renderingToBitmapCache && visual == _rootVisual);
 
