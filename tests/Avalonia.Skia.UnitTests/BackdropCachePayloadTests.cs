@@ -108,6 +108,33 @@ public class BackdropCachePayloadTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Same_Size_Move_Reuses_The_Retained_Surface_And_Matches_A_Live_Render(bool input)
+    {
+        // Glass sliding in (a drawer, a flyout) moves every frame without
+        // changing size. Each move needs a full refresh, but the retained
+        // surface it refreshes into can stay.
+        using var surface = CreateSurface();
+        using var cache = FullGrant(PayloadOf(input));
+        Frame(surface, Brushes.Gold, cache);
+        var retained = cache.PlatformState;
+        Assert.NotNull(retained);
+
+        var moved = Matrix.CreateTranslation(-17, 9);
+        cache.IsValid = false;
+        cache.RefreshRequested = true;
+        Frame(surface, Brushes.Gold, cache, transform: moved);
+
+        Assert.True(cache.IsValid);
+        // Not Assert.Same: its failure message formats the disposed state by
+        // reflection, which touches a freed native surface.
+        Assert.True(ReferenceEquals(retained, cache.PlatformState), "The retained surface was reallocated");
+        using var live = LiveRender(Brushes.Gold, moved);
+        Assert.True(MaxDifference(surface, live) <= 1, $"Differed by {MaxDifference(surface, live)}");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Full_Capture_Matches_The_Live_Backdrop(bool input)
     {
         var payload = PayloadOf(input);
