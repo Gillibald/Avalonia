@@ -455,6 +455,69 @@ public class BackdropInvalidationTests
         AssertHelper.True(worst <= 2, $"A rotated glass drifted {worst} from a fresh render.");
     }
 
+#if NUNIT
+    [AvaloniaTest, TestCase(false), TestCase(true)]
+#elif XUNIT
+    [AvaloniaTheory, InlineData(false), InlineData(true)]
+#endif
+    public void Glass_Painting_Less_Than_Its_Box_Leaves_No_Stale_Backdrop_When_It_Moves(bool viaTransform)
+    {
+        // The glass has no background, only a small child in a corner, so what
+        // it paints is far smaller than the box its backdrop fills. Moving it
+        // has to repaint the whole old box, or the vacated strip keeps last
+        // frame's filtered pixels.
+        (Window Window, Border Glass) BuildScene(double left)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            for (var x = 10; x < 190; x += 12)
+            {
+                host.Children.Add(new Border
+                {
+                    Background = Brushes.Black, Width = 4, Height = 120,
+                    [Canvas.LeftProperty] = (double)x, [Canvas.TopProperty] = 40.0
+                });
+            }
+
+            var glass = new Border
+            {
+                Width = 100,
+                Height = 60,
+                BackdropEffect = new ImmutableBlurEffect(6),
+                Child = new Border
+                {
+                    Background = Brushes.Crimson, Width = 10, Height = 10,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Bottom
+                },
+                [Canvas.LeftProperty] = left,
+                [Canvas.TopProperty] = 70.0
+            };
+            host.Children.Add(glass);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, glass);
+        }
+
+        var (window, glass) = BuildScene(30);
+        var (unblurred, _) = BuildScene(-500);
+        // Guard: the glass really filters its box, child or not.
+        var visible = MaxPixelDifference(window, unblurred, new Rect(40, 80, 40, 40));
+        AssertHelper.True(visible > 64, $"The glass barely changes the scene ({visible}); the test would prove nothing.");
+
+        if (viaTransform)
+            glass.RenderTransform = new TranslateTransform(40, 0);
+        else
+            Canvas.SetLeft(glass, 70);
+        Dispatcher.UIThread.RunJobs();
+
+        var (reference, _) = BuildScene(70);
+        var difference = MaxPixelDifference(window, reference, new Rect(0, 0, Size, Size));
+        AssertHelper.True(difference <= 2,
+            $"After moving, the glass differed by {difference} from a fresh render.");
+    }
+
     private static int MaxPixelDifference(Window a, Window b, Rect area) =>
         RenderedFrame.MaxDifference(a, b, area);
 
