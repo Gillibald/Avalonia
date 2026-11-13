@@ -11,6 +11,65 @@ public static class EffectExtensions
             return 0;
         return Math.Ceiling(radius) + 1;
     }
+    /// <summary>
+    /// Whether each output pixel of the effect depends on nothing but the
+    /// input pixel at the same position. A partial redraw then needs no input
+    /// beyond the redrawn region, so a backdrop running such a filter can be
+    /// repainted exactly where its content changed. Answers false for anything
+    /// that might read a neighborhood, including effects that add no output
+    /// padding but still sample around each pixel, such as erosion and lighting.
+    /// </summary>
+    internal static bool IsPointwise(this IEffect? effect)
+    {
+        switch (effect)
+        {
+            // A null input is the layer content itself.
+            case null:
+                return true;
+            case IColorMatrixEffect:
+            case IFloodEffect:
+            case IRecordingEffect:
+            case ITurbulenceEffect:
+                return true;
+            case IBlurEffect blur:
+                return blur.Radius <= 0;
+            case IAnisotropicBlurEffect anisotropic:
+                return anisotropic.RadiusX <= 0 && anisotropic.RadiusY <= 0 && anisotropic.Input.IsPointwise();
+            case IDropShadowEffect shadow:
+                return shadow.BlurRadius <= 0 && shadow.OffsetX == 0 && shadow.OffsetY == 0;
+            case IOffsetEffect offset:
+                return offset.OffsetX == 0 && offset.OffsetY == 0;
+            case IMorphologyEffect morphology:
+                return morphology.RadiusX <= 0 && morphology.RadiusY <= 0 && morphology.Input.IsPointwise();
+            case IComponentTransferEffect componentTransfer:
+                return componentTransfer.Input.IsPointwise();
+            case ICropEffect crop:
+                return crop.Input.IsPointwise();
+            case ICompositeEffect composite:
+                foreach (var child in composite.Children)
+                {
+                    if (!child.IsPointwise())
+                        return false;
+                }
+
+                return true;
+            case IMergeEffect merge:
+                foreach (var input in merge.Inputs)
+                {
+                    if (!input.IsPointwise())
+                        return false;
+                }
+
+                return true;
+            case IBlendEffect blend:
+                return blend.Background.IsPointwise() && blend.Foreground.IsPointwise();
+            case IArithmeticCompositeEffect arithmetic:
+                return arithmetic.Background.IsPointwise() && arithmetic.Foreground.IsPointwise();
+            default:
+                return false;
+        }
+    }
+
     internal static Thickness GetEffectOutputPadding(this IEffect? effect)
     {
         if (effect == null)

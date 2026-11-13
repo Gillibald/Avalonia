@@ -67,7 +67,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
             [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
         };
         s.Canvas.Children.Add(behind);
-        s.Canvas.Children.Add(Frosted(50, 50, 40, 40, blur: 0));
+        s.Canvas.Children.Add(Frosted(50, 50, 40, 40, blur: 4));
         s.RunJobs();
         s.Events.Rects.Clear();
 
@@ -204,7 +204,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         };
         s.Canvas.Children.Add(behind);
 
-        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
         // A child shifted past the panel's right edge: it paints outside the
         // control's box (nothing clips it), but the backdrop region is the box
         // itself, so the overhang must not widen what gets repainted.
@@ -222,7 +222,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         behind.Background = Brushes.Blue;
 
         AssertCovers(s, new Rect(50, 50, 40, 40));
-        AssertDoesNotCover(s, new Rect(95, 50, 15, 40));
+        AssertDoesNotCover(s, new Rect(100, 50, 15, 40));
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Bottom
         };
-        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
         // A geometry box shadow is the border's own drawing and does not depend
         // on the subtree, unlike a drop shadow Effect whose whole-bounds
         // re-render makes any child change repaint the full panel. This is the
@@ -272,7 +272,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         };
         s.Canvas.Children.Add(behind);
 
-        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
         // The shadow inflates the visual's subtree bounds to (49,49)-(111,111),
         // but the backdrop still samples only the panel's own 40x40 area.
         panel.Effect = new ImmutableDropShadowEffect(10, 10, 10, Colors.Black, 1);
@@ -286,7 +286,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         // and must not be dragged out into the shadow zone, which contains only
         // content painted above the sample point.
         AssertCovers(s, new Rect(50, 50, 40, 40));
-        AssertDoesNotCover(s, new Rect(95, 50, 16, 40));
+        AssertDoesNotCover(s, new Rect(100, 50, 11, 40));
     }
 
     [Fact]

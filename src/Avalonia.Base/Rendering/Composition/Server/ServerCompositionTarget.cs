@@ -756,7 +756,12 @@ namespace Avalonia.Rendering.Composition.Server
             // a full refresh of the new payload.
             _backdropFrame++;
             foreach (var visual in _backdropVisuals)
-                visual.BackdropCache?.ApplyPendingPayload();
+            {
+                if (visual.BackdropCache is not { } cache)
+                    continue;
+                cache.Pointwise = visual.BackdropEffect.IsPointwise();
+                cache.ApplyPendingPayload();
+            }
 
             foreach (var host in _backdropHostOrder)
                 RunBackdropHostPass(host.Collector, host.Owner, collector, transform);
@@ -902,6 +907,12 @@ namespace Avalonia.Rendering.Composition.Server
                         cache.RefreshRects.Clear();
                         cache.IngestRects.Clear();
                     }
+
+                    // Sampled live, a filter that reads only the pixel beneath
+                    // each output pixel takes its input for the redrawn slice
+                    // from that slice alone, which this frame repaints anyway.
+                    if (!cacheable && effect.IsPointwise())
+                        continue;
 
                     if (contained)
                         continue; // some rect already repaints the full input; nothing to widen

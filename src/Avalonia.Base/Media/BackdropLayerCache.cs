@@ -128,8 +128,35 @@ internal sealed class BackdropLayerCache : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether the backdrop's filter reads only the pixel beneath each output
+    /// pixel. Re-running such a filter costs about as much as drawing a
+    /// retained copy, so without a hint nothing is retained for it. Kept up to
+    /// date by the update pass; a change restarts the policy like a hint change.
+    /// </summary>
+    public bool Pointwise
+    {
+        get => _pointwise;
+        set
+        {
+            if (_pointwise == value)
+                return;
+            _pointwise = value;
+            _smallBehindStreak = 0;
+            _wideBehindStreak = 0;
+            _pendingPayload = BackdropCachePayload.Output;
+        }
+    }
+
+    private bool _pointwise;
+
     private BackdropCachePayload? PinnedPayload =>
-        FixedPayload ?? (_hint == BackdropCacheHint.Volatile ? BackdropCachePayload.None : null);
+        FixedPayload ?? _hint switch
+        {
+            BackdropCacheHint.Volatile => BackdropCachePayload.None,
+            BackdropCacheHint.Auto when _pointwise => BackdropCachePayload.None,
+            _ => null
+        };
 
     /// <summary>
     /// True while <see cref="PlatformState"/> holds a payload that matches the

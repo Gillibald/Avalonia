@@ -51,6 +51,26 @@ public class BackdropPointwiseTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Effects_Are_Pointwise_Only_When_No_Output_Pixel_Reads_A_Neighbor()
+    {
+        var matrix = new ImmutableColorMatrixEffect(Grayscale);
+        Assert.True(matrix.IsPointwise());
+        Assert.True(new ImmutableBlurEffect(0).IsPointwise());
+        Assert.True(new ImmutableCompositeEffect(new IEffect[] { matrix, matrix }).IsPointwise());
+        Assert.True(new ImmutableOffsetEffect(0, 0).IsPointwise());
+
+        Assert.False(new ImmutableBlurEffect(4).IsPointwise());
+        Assert.False(new ImmutableOffsetEffect(3, 0).IsPointwise());
+        Assert.False(new ImmutableCompositeEffect(new IEffect[] { matrix, new ImmutableBlurEffect(2) }).IsPointwise());
+        Assert.True(new ImmutableDropShadowEffect(0, 0, 0, Colors.Black, 1).IsPointwise());
+        Assert.False(new ImmutableDropShadowEffect(2, 2, 4, Colors.Black, 1).IsPointwise());
+
+        // Erosion adds no output padding but reads a neighborhood all the same.
+        Assert.Equal(default, new ImmutableMorphologyEffect(2, 2, dilate: false, input: null).GetEffectOutputPadding());
+        Assert.False(new ImmutableMorphologyEffect(2, 2, dilate: false, input: null).IsPointwise());
+    }
+
+    [Fact]
     public void Pointwise_Backdrop_Retains_Nothing_Under_The_Default_Hint()
     {
         using var s = new CompositorCanvas();
