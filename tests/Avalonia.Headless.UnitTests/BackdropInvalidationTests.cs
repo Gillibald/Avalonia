@@ -275,6 +275,69 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
+    public void Pointwise_Backdrop_Partial_Redraws_Match_A_Fresh_Render()
+    {
+        // An inverting backdrop repaints only the changed slice beneath it.
+        // Inversion is its own inverse, so any pixel filtered twice - last
+        // frame's output read back as this frame's input - shows up as the
+        // original colour instead of the inverted one.
+        var invert = new ImmutableColorMatrixEffect(new double[]
+        {
+            -1, 0, 0, 0, 1,
+            0, -1, 0, 0, 1,
+            0, 0, -1, 0, 1,
+            0, 0, 0, 1, 0
+        });
+        var spot = new Rect(60, 80, 30, 30);
+
+        static (Window Window, Border Behind) BuildScene(IEffect effect, IBrush brush, Rect spot)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            var behind = new Border
+            {
+                Background = brush, Width = spot.Width, Height = spot.Height,
+                [Canvas.LeftProperty] = spot.X, [Canvas.TopProperty] = spot.Y
+            };
+            host.Children.Add(behind);
+            host.Children.Add(new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = effect,
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            });
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, behind);
+        }
+
+        var (window, behind) = BuildScene(invert, Brushes.Crimson, spot);
+        _ = Sample(window, PanelRect);
+
+        var worst = 0d;
+        foreach (var brush in new IBrush[] { Brushes.DodgerBlue, Brushes.MediumSeaGreen, Brushes.Black })
+        {
+            behind.Background = brush;
+            Dispatcher.UIThread.RunJobs();
+            var partial = Sample(window, spot);
+
+            var (reference, _) = BuildScene(invert, brush, spot);
+            worst = Math.Max(worst, Distance(partial, Sample(reference, spot)));
+        }
+
+        AssertHelper.True(worst <= 3,
+            $"A partially redrawn pointwise backdrop drifted {worst:F2} from a fresh one-pass render.");
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
     public void Backdrop_Partial_Refreshes_Match_A_Fresh_Render()
     {
         // Successive small changes beneath the panel, each at a different
