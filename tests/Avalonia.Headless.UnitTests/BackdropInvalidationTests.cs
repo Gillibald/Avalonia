@@ -260,14 +260,12 @@ public class BackdropInvalidationTests
 
         behind.Background = Brushes.DodgerBlue;
         Dispatcher.UIThread.RunJobs();
-        var toggled = Sample(window, PanelRect);
 
         var (reference, _) = BuildScene(Brushes.DodgerBlue);
-        var fresh = Sample(reference, PanelRect);
+        var difference = MaxPixelDifference(window, reference, PanelRect);
 
-        AssertHelper.True(Distance(toggled, fresh) <= 3,
-            "The backdrop under an ancestor effect diverged from a fresh render: " +
-            $"toggled {toggled} vs fresh {fresh} (delta {Distance(toggled, fresh):F2}).");
+        AssertHelper.True(difference <= 2,
+            $"The backdrop under an ancestor effect differed by {difference} from a fresh render.");
     }
 
 #if NUNIT
@@ -457,24 +455,8 @@ public class BackdropInvalidationTests
         AssertHelper.True(worst <= 2, $"A rotated glass drifted {worst} from a fresh render.");
     }
 
-    private static int MaxPixelDifference(Window a, Window b, Rect area)
-    {
-        using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
-        using var fb = b.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
-        using var la = fa.Lock();
-        using var lb = fb.Lock();
-        var bytesA = new byte[la.RowBytes * la.Size.Height];
-        var bytesB = new byte[lb.RowBytes * lb.Size.Height];
-        System.Runtime.InteropServices.Marshal.Copy(la.Address, bytesA, 0, bytesA.Length);
-        System.Runtime.InteropServices.Marshal.Copy(lb.Address, bytesB, 0, bytesB.Length);
-
-        var worst = 0;
-        for (var y = (int)area.Y; y < (int)area.Bottom; y++)
-        for (var x = (int)area.X; x < (int)area.Right; x++)
-        for (var c = 0; c < 4; c++)
-            worst = Math.Max(worst, Math.Abs(bytesA[y * la.RowBytes + x * 4 + c] - bytesB[y * lb.RowBytes + x * 4 + c]));
-        return worst;
-    }
+    private static int MaxPixelDifference(Window a, Window b, Rect area) =>
+        RenderedFrame.MaxDifference(a, b, area);
 
 #if NUNIT
     [AvaloniaTest]
@@ -524,19 +506,18 @@ public class BackdropInvalidationTests
         var (window, behind) = BuildScene(invert, Brushes.Crimson, spot);
         _ = Sample(window, PanelRect);
 
-        var worst = 0d;
+        var worst = 0;
         foreach (var brush in new IBrush[] { Brushes.DodgerBlue, Brushes.MediumSeaGreen, Brushes.Black })
         {
             behind.Background = brush;
             Dispatcher.UIThread.RunJobs();
-            var partial = Sample(window, spot);
 
             var (reference, _) = BuildScene(invert, brush, spot);
-            worst = Math.Max(worst, Distance(partial, Sample(reference, spot)));
+            worst = Math.Max(worst, MaxPixelDifference(window, reference, PanelRect));
         }
 
-        AssertHelper.True(worst <= 3,
-            $"A partially redrawn pointwise backdrop drifted {worst:F2} from a fresh one-pass render.");
+        AssertHelper.True(worst <= 2,
+            $"A partially redrawn pointwise backdrop differed by {worst} from a fresh one-pass render.");
     }
 
 #if NUNIT
@@ -591,21 +572,19 @@ public class BackdropInvalidationTests
         _ = Sample(window, PanelRect);
 
         var swaps = new IBrush[] { Brushes.DodgerBlue, Brushes.MediumSeaGreen, Brushes.Crimson };
-        var worst = 0d;
+        var worst = 0;
         for (var i = 0; i < spots.Length; i++)
         {
             colors[i] = swaps[i];
             squares[i].Background = swaps[i];
             Dispatcher.UIThread.RunJobs();
-            var partial = Sample(window, PanelRect);
 
             var (reference, _) = BuildScene((IBrush[])colors.Clone(), spots);
-            var fresh = Sample(reference, PanelRect);
-            worst = Math.Max(worst, Distance(partial, fresh));
+            worst = Math.Max(worst, MaxPixelDifference(window, reference, PanelRect));
         }
 
-        AssertHelper.True(worst <= 3,
-            $"A partially refreshed frame drifted {worst:F2} from a fresh one-pass render.");
+        AssertHelper.True(worst <= 2,
+            $"A partially refreshed frame differed by {worst} from a fresh one-pass render.");
     }
 
 #if NUNIT
@@ -671,14 +650,12 @@ public class BackdropInvalidationTests
 
         behind.Background = Brushes.DodgerBlue;
         Dispatcher.UIThread.RunJobs();
-        var toggled = Sample(window, PanelRect);
 
         var (reference, _) = BuildCachedScene(Brushes.DodgerBlue);
-        var fresh = Sample(reference, PanelRect);
+        var difference = MaxPixelDifference(window, reference, PanelRect);
 
-        AssertHelper.True(Distance(toggled, fresh) <= 3,
-            "The filtered result inside the cached subtree drifted from a fresh render: " +
-            $"toggled {toggled} vs fresh {fresh} (delta {Distance(toggled, fresh):F2}).");
+        AssertHelper.True(difference <= 2,
+            $"The filtered result inside the cached subtree differed by {difference} from a fresh render.");
     }
 
 #if NUNIT
@@ -736,23 +713,24 @@ public class BackdropInvalidationTests
         var caretRect = new Rect(140, 90, 20, 20);
 
         var first = Sample(window, band);
+        var firstFrame = RenderedFrame.Capture(window);
         var caretFirst = Sample(window, caretRect);
         var caretMoved = 0d;
-        var drift = 0d;
+        var drift = 0;
 
         for (var i = 0; i < 6; i++)
         {
             caret.Background = i % 2 == 0 ? Brushes.White : Brushes.Black;
             Dispatcher.UIThread.RunJobs();
 
-            drift = Math.Max(drift, Distance(first, Sample(window, band)));
+            drift = Math.Max(drift, RenderedFrame.MaxDifference(firstFrame, RenderedFrame.Capture(window), band));
             caretMoved = Math.Max(caretMoved, Distance(caretFirst, Sample(window, caretRect)));
         }
 
         AssertHelper.True(caretMoved > Threshold,
             $"The child never visibly changed (spread {caretMoved:F2}); the test exercised nothing.");
-        AssertHelper.True(drift < 2,
-            $"The filtered band drifted {drift:F2} while only content above the backdrop changed.");
+        AssertHelper.True(drift <= 1,
+            $"The filtered band drifted by {drift} while only content above the backdrop changed.");
 
         recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
             ctx.DrawRectangle(Brushes.MediumSeaGreen, null, new Rect(0, 0, Size, Size)));
@@ -828,9 +806,10 @@ public class BackdropInvalidationTests
         var widths = new[] { 18d, 22, 20, 16, 14, 18 };
 
         var first = Sample(window, band);
+        var firstFrame = RenderedFrame.Capture(window);
         var roamFirst = Sample(window, roam);
         var badgeMoved = 0d;
-        var drift = 0d;
+        var drift = 0;
 
         for (var i = 0; i < margins.Length; i++)
         {
@@ -838,14 +817,14 @@ public class BackdropInvalidationTests
             badge.Width = widths[i];
             Dispatcher.UIThread.RunJobs();
 
-            drift = Math.Max(drift, Distance(first, Sample(window, band)));
+            drift = Math.Max(drift, RenderedFrame.MaxDifference(firstFrame, RenderedFrame.Capture(window), band));
             badgeMoved = Math.Max(badgeMoved, Distance(roamFirst, Sample(window, roam)));
         }
 
         AssertHelper.True(badgeMoved > Threshold,
             $"The child's bounds never visibly changed (spread {badgeMoved:F2}); the test exercised nothing.");
-        AssertHelper.True(drift < 2,
-            $"The filtered band drifted {drift:F2} while a child animated its bounds above the backdrop.");
+        AssertHelper.True(drift <= 1,
+            $"The filtered band drifted by {drift} while a child animated its bounds above the backdrop.");
 
         recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
             ctx.DrawRectangle(Brushes.MediumSeaGreen, null, new Rect(0, 0, Size, Size)));
@@ -855,27 +834,8 @@ public class BackdropInvalidationTests
             "A change behind the panel did not refresh the filtered result.");
     }
 
-    private static int MaxPixelDifference(Window a, Window b, PixelRect area)
-    {
-        using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
-        using var fb = b.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
-        using var la = fa.Lock();
-        using var lb = fb.Lock();
-
-        var bytesA = new byte[la.RowBytes * la.Size.Height];
-        var bytesB = new byte[lb.RowBytes * lb.Size.Height];
-        System.Runtime.InteropServices.Marshal.Copy(la.Address, bytesA, 0, bytesA.Length);
-        System.Runtime.InteropServices.Marshal.Copy(lb.Address, bytesB, 0, bytesB.Length);
-
-        var worst = 0;
-        for (var y = area.Y; y < area.Bottom; y++)
-        for (var x = area.X * 4; x < area.Right * 4; x++)
-        {
-            worst = Math.Max(worst, Math.Abs(bytesA[y * la.RowBytes + x] - bytesB[y * lb.RowBytes + x]));
-        }
-
-        return worst;
-    }
+    private static int MaxPixelDifference(Window a, Window b, PixelRect area) =>
+        RenderedFrame.MaxDifference(a, b, new Rect(area.X, area.Y, area.Width, area.Height));
 
 #if NUNIT
     [AvaloniaTest]

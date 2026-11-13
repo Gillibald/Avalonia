@@ -129,12 +129,12 @@ public class EffectPartialRedrawTests
 
         overlay.Background = HalfBlue;
         Dispatcher.UIThread.RunJobs();
-        var partial = Sample(window, OverlayRect);
 
         // Ground truth: the same scene built directly in its final state and
         // rendered in one full pass.
         var (reference, _) = BuildScene(HalfBlue);
         var full = Sample(reference, OverlayRect);
+        var difference = RenderedFrame.MaxDifference(window, reference, OverlayRect);
 
         // Geometry guard: prove the shadow really darkens the compared region
         // in a full render by comparing against the same scene without the
@@ -146,9 +146,8 @@ public class EffectPartialRedrawTests
             $"The shadow does not reach the compared region ({Distance(full, noShadow):F2}); " +
             "the scene geometry is broken.");
 
-        AssertHelper.True(Distance(partial, full) <= 3,
-            "A foreign-slice redraw changed the shadowed pixels inside the slice: " +
-            $"partial {partial} vs full {full} (delta {Distance(partial, full):F2}). " +
+        AssertHelper.True(difference <= 2,
+            $"A foreign-slice redraw changed the shadowed pixels inside the slice by {difference}. " +
             "The effect's filter input lost the subtree content outside the slice.");
     }
 }
