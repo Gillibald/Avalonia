@@ -224,6 +224,114 @@ public class BackdropCachePayloadTests
         Assert.True(MaxDifference(surface, reference) <= 1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Front_Only_Frame_Under_Rotation_Draws_The_Retained_Payload_Inside_The_Rotated_Box(bool input)
+    {
+        // The retained pixels cover the rotated box's device AABB; drawn back,
+        // they must stay inside the rotated box itself, as the live backdrop
+        // does, and leave the AABB's corners to what is beneath.
+        var center = Box.Center;
+        var transform = Matrix.CreateTranslation(-center.X, -center.Y)
+                        * Matrix.CreateRotation(Math.PI / 9)
+                        * Matrix.CreateTranslation(center.X, center.Y);
+
+        using var surface = CreateSurface();
+        using var cache = FullGrant(PayloadOf(input));
+        Frame(surface, Brushes.Gold, cache, transform: transform);
+
+        Frame(surface, Brushes.Gold, cache, new Rect(0, 0, Width, Height), transform);
+
+        using var reference = LiveRender(Brushes.Gold, transform);
+        Assert.True(cache.IsValid);
+        var difference = MaxDifference(surface, reference);
+        Assert.True(difference <= 4, $"Differed from the live backdrop by {difference}");
+    }
+
+    private const double Scale = 2;
+
+    private static SKSurface CreateScaledSurface() =>
+        SKSurface.Create(new SKImageInfo((int)(Width * Scale), (int)(Height * Scale), SKColorType.Bgra8888,
+            SKAlphaType.Premul));
+
+    /// <summary>
+    /// <see cref="Frame"/> at render scale 2: the whole scene is drawn under the
+    /// scale, the way a compositor target applies its scaling, and the dirty
+    /// clip and refresh rects stay in the scene's own units.
+    /// </summary>
+    private static void ScaledFrame(SKSurface surface, IBrush spot, BackdropLayerCache? cache, Rect? dirty = null)
+    {
+        using var ctx = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+        {
+            Surface = surface,
+            Canvas = surface.Canvas,
+            Dpi = new Vector(96 * Scale, 96 * Scale)
+        });
+        ctx.Transform = Matrix.CreateScale(Scale, Scale);
+
+        if (dirty is { } clip)
+            ctx.PushClip(clip);
+
+        DrawScene(ctx, spot);
+        ctx.PushLayer(new LayerOptions { Bounds = Box, BackdropEffect = Blur, BackdropCache = cache });
+        ctx.PopLayer();
+        ctx.DrawRectangle(Wash, null, Box);
+
+        if (dirty != null)
+            ctx.PopClip();
+    }
+
+    private static int MaxDifference(SKSurface a, SKSurface b, int width, int height)
+    {
+        using var ia = a.Snapshot();
+        using var ib = b.Snapshot();
+        using var pa = SKBitmap.FromImage(ia);
+        using var pb = SKBitmap.FromImage(ib);
+        var worst = 0;
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var ca = pa.GetPixel(x, y);
+            var cb = pb.GetPixel(x, y);
+            worst = Math.Max(worst, Math.Abs(ca.Red - cb.Red));
+            worst = Math.Max(worst, Math.Abs(ca.Green - cb.Green));
+            worst = Math.Max(worst, Math.Abs(ca.Blue - cb.Blue));
+            worst = Math.Max(worst, Math.Abs(ca.Alpha - cb.Alpha));
+        }
+
+        return worst;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Partial_Refresh_At_Render_Scale_2_Matches_A_Fresh_Render(bool input)
+    {
+        // The spot (64,64,8,8) changes beneath the glass. Blur 10 reaches 11
+        // in scene units, so the output changes within O = (53,53,30,30) and
+        // re-filtering O reads O + 11. Rects are granted in scene units; the
+        // backend has to map them through the scale onto device pixels.
+        using var surface = CreateScaledSurface();
+        using var cache = FullGrant(PayloadOf(input));
+        ScaledFrame(surface, Brushes.Gold, cache);
+
+        var changed = new Rect(53, 53, 30, 30);
+        cache.IsValid = true;
+        cache.RefreshRequested = true;
+        if (input)
+            cache.IngestRects.Add(new Rect(64, 64, 8, 8));
+        else
+            cache.RefreshRects.Add(changed);
+        ScaledFrame(surface, Brushes.Green, cache, input ? changed : changed.Inflate(11));
+
+        using var reference = CreateScaledSurface();
+        ScaledFrame(reference, Brushes.Green, null);
+        Assert.True(cache.IsValid);
+        var difference = MaxDifference(surface, reference, (int)(Width * Scale), (int)(Height * Scale));
+        Assert.True(difference <= 1, $"Differed from a fresh render by {difference}");
+    }
+
     [Fact]
     public void No_Cache_Payload_Releases_The_Retained_Payload_And_Draws_Live()
     {

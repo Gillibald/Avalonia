@@ -397,6 +397,66 @@ public class BackdropInvalidationTests
             $"A size-less subtree backdrop diverged from a sized one: {initial} initially, {moved} after a move.");
     }
 
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Rotated_Glass_Tracks_Content_Behind_It_Like_A_Fresh_Render()
+    {
+        // A rotated glass cannot map host-space dirt back to its local space
+        // exactly, so every change beneath it takes the full refresh path. The
+        // filled region must stay inside the rotated box, and each frame must
+        // match a fresh render of the same state.
+        (Window Window, Border Behind) BuildScene(IBrush behindBrush)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            for (var x = 20; x < 180; x += 12)
+            {
+                host.Children.Add(new Border
+                {
+                    Background = Brushes.Black, Width = 4, Height = 140,
+                    [Canvas.LeftProperty] = (double)x, [Canvas.TopProperty] = 30.0
+                });
+            }
+
+            var behind = new Border
+            {
+                Background = behindBrush, Width = 30, Height = 30,
+                [Canvas.LeftProperty] = 85.0, [Canvas.TopProperty] = 85.0
+            };
+            host.Children.Add(behind);
+            host.Children.Add(new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(6),
+                RenderTransform = new RotateTransform(20),
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            });
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, behind);
+        }
+
+        var whole = new Rect(0, 0, Size, Size);
+        var (window, behind) = BuildScene(Brushes.Crimson);
+        var worst = 0;
+        foreach (var brush in new IBrush[] { Brushes.DodgerBlue, Brushes.MediumSeaGreen })
+        {
+            behind.Background = brush;
+            Dispatcher.UIThread.RunJobs();
+            var (reference, _) = BuildScene(brush);
+            worst = Math.Max(worst, MaxPixelDifference(window, reference, whole));
+        }
+
+        AssertHelper.True(worst <= 2, $"A rotated glass drifted {worst} from a fresh render.");
+    }
+
     private static int MaxPixelDifference(Window a, Window b, Rect area)
     {
         using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
