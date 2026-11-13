@@ -43,7 +43,7 @@ public class BackdropCachePayloadTests
     /// (everything when null), apply the backdrop, then the glass's own wash.
     /// </summary>
     private static void Frame(SKSurface surface, IBrush spot, BackdropLayerCache? cache, Rect? dirty = null,
-        Matrix? transform = null)
+        Matrix? transform = null, IEffect? effect = null)
     {
         using var ctx = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
         {
@@ -60,7 +60,7 @@ public class BackdropCachePayloadTests
         var saved = ctx.Transform;
         if (transform is { } t)
             ctx.Transform = t * saved;
-        ctx.PushLayer(new LayerOptions { Bounds = Box, BackdropEffect = Blur, BackdropCache = cache });
+        ctx.PushLayer(new LayerOptions { Bounds = Box, BackdropEffect = effect ?? Blur, BackdropCache = cache });
         ctx.PopLayer();
         ctx.DrawRectangle(Wash, null, Box);
         ctx.Transform = saved;
@@ -69,10 +69,10 @@ public class BackdropCachePayloadTests
             ctx.PopClip();
     }
 
-    private static SKSurface LiveRender(IBrush spot, Matrix? transform = null)
+    private static SKSurface LiveRender(IBrush spot, Matrix? transform = null, IEffect? effect = null)
     {
         var surface = CreateSurface();
-        Frame(surface, spot, cache: null, transform: transform);
+        Frame(surface, spot, cache: null, transform: transform, effect: effect);
         return surface;
     }
 
@@ -147,6 +147,33 @@ public class BackdropCachePayloadTests
         Assert.True(cache.IsValid);
         Assert.NotNull(cache.PlatformState);
         Assert.True(MaxDifference(surface, reference) <= 1);
+    }
+
+    public static TheoryData<string> NeighborReadingEffects => new() { "erode", "offset" };
+
+    private static IEffect NeighborReadingEffect(string name) => name switch
+    {
+        // Neither adds output padding on the side it reads from.
+        "erode" => new ImmutableMorphologyEffect(4, 4, dilate: false, input: null),
+        _ => new ImmutableOffsetEffect(6, 0)
+    };
+
+    [Theory]
+    [MemberData(nameof(NeighborReadingEffects))]
+    public void Input_Capture_Of_An_Effect_Reading_Past_Its_Padding_Matches_The_Live_Backdrop(string name)
+    {
+        // The retained input has to reach as far past the box as the filter
+        // reads, or pixels at the box edge are filtered from nothing.
+        var effect = NeighborReadingEffect(name);
+        using var reference = LiveRender(Brushes.Gold, effect: effect);
+        using var surface = CreateSurface();
+        using var cache = FullGrant(BackdropCachePayload.Input);
+
+        Frame(surface, Brushes.Gold, cache, effect: effect);
+
+        Assert.True(cache.IsValid);
+        var difference = MaxDifference(surface, reference);
+        Assert.True(difference <= 1, $"Differed from the live backdrop by {difference}");
     }
 
     [Fact]
