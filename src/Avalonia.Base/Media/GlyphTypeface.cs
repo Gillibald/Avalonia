@@ -163,7 +163,7 @@ namespace Avalonia.Media
             _variationPosition = default;
 
             _hasOs2Table = OS2Table.TryLoad(this, out _os2Table);
-            _cmapTable = CmapTable.Load(this);
+            _cmapTable = CmapTable.Load(this, _hasOs2Table ? _os2Table.FirstCharIndex : (ushort)0);
 
             if (MetaTable.TryLoad(this, out var metaTable))
             {

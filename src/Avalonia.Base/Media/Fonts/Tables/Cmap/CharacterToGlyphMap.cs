@@ -18,18 +18,32 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         private readonly CmapFormat4Table? _format4;
         private readonly CmapFormat12Or13Table? _format12Or13;
 
+        // Fonts with only a Windows Symbol (3,0) subtable, such as Symbol and Wingdings, encode their
+        // glyphs in a private-use page, typically U+F020..U+F0FF, while text written against them uses
+        // the single-byte code points U+0020..U+00FF. A code point the subtable does not map directly
+        // resolves at page base + code point, which keeps glyph lookups, font fallback and shaping
+        // agreeing on which characters the font covers. Zero means the subtable is not a Symbol one.
+        private readonly int _symbolPageBase;
+
+        private const int FirstRemappedCodePoint = 0x20;
+        private const int LastRemappedCodePoint = 0xFF;
+
         internal CmapFormat Format { get; }
 
         /// <summary>
         /// Initializes a new instance of the CharacterToGlyphMap class using the specified Format 4 cmap table.
         /// </summary>
         /// <param name="table">The Format 4 cmap table that provides character-to-glyph mapping data. Cannot be null.</param>
+        /// <param name="symbolPageBase">For a Windows Symbol (3,0) subtable, the first code of the page it encodes its
+        /// glyphs in, such as 0xF000; code points U+0020..U+00FF it does not map resolve at this base plus the code
+        /// point. Zero for any other subtable.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal CharacterToGlyphMap(CmapFormat4Table table)
+        internal CharacterToGlyphMap(CmapFormat4Table table, int symbolPageBase = 0)
         {
             Format = CmapFormat.Format4;
             _format4 = table;
             _format12Or13 = null;
+            _symbolPageBase = symbolPageBase;
         }
 
         /// <summary>
@@ -43,6 +57,7 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
             Format = table.Format;
             _format12Or13 = table;
             _format4 = null;
+            _symbolPageBase = 0;
         }
 
         /// <summary>
@@ -65,12 +80,19 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ushort GetGlyph(int codePoint)
         {
-            return Format switch
+            var glyphId = Format switch
             {
                 CmapFormat.Format4 => _format4!.GetGlyph(codePoint),
                 CmapFormat.Format12 or CmapFormat.Format13 => _format12Or13!.GetGlyph(codePoint),
-                _ => 0
+                _ => (ushort)0
             };
+
+            if (glyphId == 0 && _symbolPageBase != 0)
+            {
+                TryGetSymbolRangeGlyph(codePoint, out glyphId);
+            }
+
+            return glyphId;
         }
 
         /// <summary>
@@ -81,12 +103,14 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ContainsGlyph(int codePoint)
         {
-            return Format switch
+            var contains = Format switch
             {
                 CmapFormat.Format4 => _format4!.ContainsGlyph(codePoint),
                 CmapFormat.Format12 or CmapFormat.Format13 => _format12Or13!.ContainsGlyph(codePoint),
                 _ => false
             };
+
+            return contains || _symbolPageBase != 0 && TryGetSymbolRangeGlyph(codePoint, out _);
         }
 
         /// <summary>
@@ -106,6 +130,12 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
             {
                 case CmapFormat.Format4:
                     _format4!.GetGlyphs(codePoints, glyphIds);
+
+                    if (_symbolPageBase != 0)
+                    {
+                        RemapSymbolRangeMisses(codePoints, glyphIds);
+                    }
+
                     return;
                 case CmapFormat.Format12:
                 case CmapFormat.Format13:
@@ -129,10 +159,37 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         { 
             switch (Format)
             { 
-                case CmapFormat.Format4: return _format4!.TryGetGlyph(codePoint, out glyphId); 
+                case CmapFormat.Format4:
+                    return _format4!.TryGetGlyph(codePoint, out glyphId)
+                        || _symbolPageBase != 0 && TryGetSymbolRangeGlyph(codePoint, out glyphId);
                 case CmapFormat.Format12 or CmapFormat.Format13: return _format12Or13!.TryGetGlyph(codePoint, out glyphId);
                 default: glyphId = 0; return false; 
             } 
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TryGetSymbolRangeGlyph(int codePoint, out ushort glyphId)
+        {
+            if ((uint)(codePoint - FirstRemappedCodePoint) > LastRemappedCodePoint - FirstRemappedCodePoint)
+            {
+                glyphId = 0;
+
+                return false;
+            }
+
+            return _format4!.TryGetGlyph(_symbolPageBase + codePoint, out glyphId);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void RemapSymbolRangeMisses(ReadOnlySpan<int> codePoints, Span<ushort> glyphIds)
+        {
+            for (var i = 0; i < codePoints.Length; i++)
+            {
+                if (glyphIds[i] == 0 && TryGetSymbolRangeGlyph(codePoints[i], out var glyphId))
+                {
+                    glyphIds[i] = glyphId;
+                }
+            }
         }
 
         /// <summary>

@@ -14,7 +14,10 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         internal const string TableName = "cmap";
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse(TableName);
 
-        public static CharacterToGlyphMap Load(GlyphTypeface glyphTypeface)
+        /// <param name="glyphTypeface">The typeface whose 'cmap' table is loaded.</param>
+        /// <param name="firstCharIndex">The OS/2 usFirstCharIndex of the font, or 0 when it has no OS/2 table. Its high
+        /// byte selects the code page a Windows Symbol subtable encodes its glyphs in.</param>
+        public static CharacterToGlyphMap Load(GlyphTypeface glyphTypeface, ushort firstCharIndex = 0)
         {
             if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var table))
             {
@@ -58,7 +61,15 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
             // Then Format 4
             if (TryFindFormat4Entry(entries, out var format4Entry))
             {
-                return new CharacterToGlyphMap(new CmapFormat4Table(format4Entry.GetSubtableMemory(table)));
+                var subtable = new CmapFormat4Table(format4Entry.GetSubtableMemory(table));
+
+                // TryFindFormat4Entry only settles on a Symbol subtable when the font has no Unicode one.
+                if (format4Entry.Platform == PlatformID.Windows && format4Entry.Encoding == CmapEncoding.Microsoft_Symbol)
+                {
+                    return new CharacterToGlyphMap(subtable, GetSymbolPageBase(firstCharIndex));
+                }
+
+                return new CharacterToGlyphMap(subtable);
             }
 
             // Fallback to Format 13, which is a "last resort" format mapping many codepoints to a single glyph
@@ -68,6 +79,17 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
             }
 
             throw new InvalidOperationException("No suitable cmap subtable found.");
+
+            // A Symbol subtable encodes its glyphs in one 256-code page, conventionally U+F000..U+F0FF.
+            // usFirstCharIndex is the lowest code the font maps, so only its high byte names the page:
+            // Marlett starts at U+F030 and still encodes its '0' glyph at U+F030. A missing OS/2 table or
+            // a page of 0 (codes already at their single-byte values) falls back to the conventional page.
+            static int GetSymbolPageBase(ushort firstCharIndex)
+            {
+                var page = firstCharIndex & 0xFF00;
+
+                return page == 0 ? 0xF000 : page;
+            }
 
             // Tries to find the best Format 12 subtable entry based on platform and encoding preferences
             static bool TryFindFormat12Or13Entry(CmapSubtableEntry[] entries, CmapFormat expectedFormat, out CmapSubtableEntry result)

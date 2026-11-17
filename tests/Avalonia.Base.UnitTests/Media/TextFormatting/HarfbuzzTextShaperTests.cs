@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Harfbuzz;
 using Avalonia.Media;
@@ -67,6 +68,22 @@ public class HarfBuzzTextShaperTests
             
             Assert.NotNull(result);
             Assert.True(result.Length == 11);
+        }
+    }
+
+    [Fact]
+    public void ShapeText_WithTabCharacter_In_Symbol_Font_Uses_Symbol_Space_Glyph()
+    {
+        using (UnitTestApplication.Start(Services))
+        {
+            var glyphTypeface = SymbolCmapTests.CreateSymbolTypeface();
+            var map = glyphTypeface.CharacterToGlyphMap;
+
+            var result = _shaper.ShapeText("\tA".AsMemory(), new TextShaperOptions(glyphTypeface, 16));
+
+            Assert.Equal(3, result.Length);
+            Assert.NotEqual(0, map[0xF020]);
+            Assert.Equal(map[0xF020], result[1].GlyphIndex);
         }
     }
 
